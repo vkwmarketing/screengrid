@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/png" href="/logo.png">
+<title>Ad Locations Map — ScreenGrid</title>
+<link rel="stylesheet" href="/css/main.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+  html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; background: var(--bg-base); }
+  .map-layout { display: grid; grid-template-columns: 360px 1fr; height: calc(100vh - 56px); margin-top: 56px; overflow: hidden; }
+  .nav-inner { flex-wrap: nowrap !important; gap: 8px; }
+  .nav-actions { flex-shrink: 0; display: flex; gap: 6px; align-items: center; }
+  .map-sidebar { background: var(--bg-surface); border-right: 1px solid var(--border); overflow-y: auto; display: flex; flex-direction: column; }
+  .sidebar-header { padding: 20px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .sidebar-header h2 { font-family: 'Barlow Condensed', sans-serif; font-size: 1.4rem; font-weight: 700; color: var(--text-primary); margin: 0 0 4px; letter-spacing: .04em; text-transform: uppercase; }
+  .sidebar-header p { color: var(--text-muted); font-size: .85rem; margin: 0; }
+  .search-bar { padding: 14px 20px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .search-bar input { width: 100%; background: var(--bg-card); border: 1px solid var(--border); color: var(--text-primary); border-radius: 8px; padding: 10px 14px; font-size: .9rem; outline: none; transition: border .2s; }
+  .search-bar input:focus { border-color: var(--blue); }
+  .filter-bar { padding: 10px 20px; border-bottom: 1px solid var(--border); display: flex; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
+  .filter-chip { background: var(--bg-card); border: 1px solid var(--border); color: var(--text-secondary); border-radius: 20px; padding: 4px 12px; font-size: .78rem; cursor: pointer; transition: all .2s; white-space: nowrap; }
+  .filter-chip.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .location-list { flex: 1; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .loc-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 14px; cursor: pointer; transition: all .2s; position: relative; }
+  .loc-card:hover, .loc-card.active { border-color: var(--blue); background: rgba(45,107,228,.08); }
+  .loc-card.active::before { content:''; position:absolute; left:0; top:50%; transform:translateY(-50%); width:3px; height:60%; background:var(--blue); border-radius:0 3px 3px 0; }
+  .loc-card-name { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 1rem; color: var(--text-primary); letter-spacing: .03em; margin-bottom: 2px; }
+  .loc-card-addr { font-size: .78rem; color: var(--text-muted); margin-bottom: 10px; }
+  .loc-card-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .loc-stat { background: var(--bg-surface); border-radius: 6px; padding: 6px 8px; }
+  .loc-stat-val { font-size: .95rem; font-weight: 700; color: var(--accent); font-family: 'Barlow Condensed', sans-serif; }
+  .loc-stat-label { font-size: .7rem; color: var(--text-muted); margin-top: 1px; }
+  .loc-availability { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+  .avail-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .avail-dot.available { background: var(--success); box-shadow: 0 0 6px var(--success); }
+  .avail-dot.presale { background: var(--warning); box-shadow: 0 0 6px var(--warning); }
+  .avail-dot.full { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
+  .avail-text { font-size: .75rem; color: var(--text-secondary); }
+  #map { flex: 1; z-index: 1; }
+  .map-detail-panel { position: absolute; right: 24px; top: 16px; width: 320px; max-height: calc(100% - 80px); background: var(--bg-surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px; z-index: 800; display: none; box-shadow: 0 12px 40px rgba(0,0,0,.5); overflow-y: auto; }
+  .map-detail-panel.show { display: block; }
+  .detail-close { position: absolute; top: 12px; right: 14px; background: none; border: none; color: var(--text-muted); font-size: 1.2rem; cursor: pointer; }
+  .detail-close:hover { color: var(--text-primary); }
+  .detail-name { font-family: 'Barlow Condensed', sans-serif; font-size: 1.3rem; font-weight: 700; color: var(--text-primary); letter-spacing: .04em; margin-bottom: 2px; }
+  .detail-addr { font-size: .82rem; color: var(--text-muted); margin-bottom: 14px; }
+  .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+  .detail-stat { background: var(--bg-card); border-radius: 8px; padding: 10px; }
+  .detail-stat-val { font-size: 1.1rem; font-weight: 700; color: var(--accent); font-family: 'Barlow Condensed', sans-serif; }
+  .detail-stat-label { font-size: .72rem; color: var(--text-muted); margin-top: 2px; }
+  .traffic-bar-wrap { margin-bottom: 14px; }
+  .traffic-label { font-size: .78rem; color: var(--text-secondary); margin-bottom: 6px; display: flex; justify-content: space-between; }
+  .traffic-bar { height: 6px; background: var(--bg-card); border-radius: 3px; overflow: hidden; }
+  .traffic-fill { height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--blue), var(--accent)); transition: width .6s; }
+  .spot-list { margin-bottom: 14px; }
+  .spot-item { display: flex; align-items: center; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: .82rem; }
+  .spot-item:last-child { border: none; }
+  .spot-name { color: var(--text-secondary); }
+  .spot-price { color: var(--text-primary); font-weight: 600; }
+  .spot-status { font-size: .72rem; }
+  .leaflet-popup-content-wrapper {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+  }
+  .leaflet-popup-content { margin: 0 !important; }
+  .leaflet-popup-tip-container { display: none !important; }
+  .leaflet-popup-close-button { color: #8BA3C7 !important; top: 8px !important; right: 8px !important; font-size: 18px !important; }
+  .map-legend { position: absolute; left: 390px; bottom: 24px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; z-index: 800; display: flex; gap: 16px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: .78rem; color: var(--text-secondary); }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+  @media (max-width: 900px) {
+    .map-layout { grid-template-columns: 1fr; grid-template-rows: 1fr 50vh; }
+    .map-sidebar { max-height: 50vh; }
+    .map-legend { left: 12px; }
+    .map-detail-panel { right: 12px; top: 16px; width: calc(100% - 24px); max-height: calc(100% - 80px); }
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav style="position:fixed;top:0;left:0;right:0;height:56px;background:var(--bg-surface);border-bottom:1px solid var(--border);z-index:1000;display:flex;align-items:center;padding:0 20px;gap:24px">
+  <a href="/" style="display:flex;align-items:center;gap:10px;text-decoration:none;flex-shrink:0">
+    <img src="/assets/logo.png" alt="ScreenGrid" style="height:32px;" onerror="this.style.display='none'">
+    <span style="white-space:nowrap;font-family:var(--font-display);font-size:20px;font-weight:800"><span style="color:var(--text-primary)">Screen</span><span style="color:var(--blue)">Grid</span></span>
+  </a>
+  <div style="display:flex;align-items:center;gap:4px">
+    <a href="/" style="color:var(--text-secondary);text-decoration:none;padding:6px 10px;border-radius:6px;font-size:14px">Home</a>
+    <a href="/map.html" style="color:var(--blue);text-decoration:none;padding:6px 10px;border-radius:6px;font-size:14px;font-weight:600">Map</a>
+    <a href="/#pricing" style="color:var(--text-secondary);text-decoration:none;padding:6px 10px;border-radius:6px;font-size:14px">Pricing</a>
+  </div>
+  <div id="navActions" style="display:flex;align-items:center;gap:8px;margin-left:auto;flex-shrink:0">
+    <a href="/login.html" class="btn btn-outline btn-sm">Log In</a>
+    <a href="/signup.html" class="btn btn-primary btn-sm">Get Started</a>
+  </div>
+</nav>
+
+<!-- MAP LAYOUT -->
+<div class="map-layout">
+  <!-- SIDEBAR -->
+  <div class="map-sidebar">
+    <div class="sidebar-header">
+      <h2>Ad Locations</h2>
+      <p>Click a location to see details & available spots</p>
+    </div>
+    <div class="search-bar">
+      <input type="text" id="searchInput" placeholder="🔍  Search by name or area…">
+    </div>
+    <div class="filter-bar">
+      <div class="filter-chip active" data-filter="all">All</div>
+      <div class="filter-chip" data-filter="available">Available</div>
+      <div class="filter-chip" data-filter="presale">Presale</div>
+      <div class="filter-chip" data-filter="high-traffic">High Traffic</div>
+    </div>
+    <div class="location-list" id="locationList">
+      <div style="color:var(--text-muted);font-size:.85rem;text-align:center;padding:40px 20px;">Loading locations…</div>
+    </div>
+  </div>
+
+  <!-- MAP -->
+  <div style="position:relative;flex:1;display:flex;flex-direction:column;">
+    <div id="map" style="flex:1;min-height:0;"></div>
+
+    <!-- LEGEND -->
+    <div class="map-legend">
+      <div class="legend-item"><div class="legend-dot" style="background:var(--success);"></div>Available</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--warning);"></div>Presale</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--danger);"></div>Claimed</div>
+    </div>
+
+    <!-- DETAIL PANEL -->
+    <div class="map-detail-panel" id="detailPanel">
+      <button class="detail-close" onclick="closeDetail()">✕</button>
+      <div id="detailContent"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const API = '';
+let locations = [];
+let markers = {};
+let activeLocId = null;
+let activeFilter = 'all';
+
+// Init map
+const map = L.map('map', { zoomControl: false }).setView([43.465, -80.52], 13);
+L.control.zoom({ position: 'topright' }).addTo(map);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: '© OpenStreetMap © CARTO', maxZoom: 20
+}).addTo(map);
+
+function makeIcon(color) {
+  return L.divIcon({
+    className: '',
+    html: `<div style="
+      width:26px;height:26px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);
+      background:${color};border:3px solid rgba(255,255,255,.25);
+      box-shadow:0 4px 14px rgba(0,0,0,.5);
+    "></div>`,
+    iconSize: [26, 26], iconAnchor: [13, 26]
+  });
+}
+
+const iconColors = {
+  available: '#2ECC71',
+  presale: '#F5A623',
+  claimed: '#E45B5B',
+  default: '#2D6BE4'
+};
+
+async function loadLocations() {
+  try {
+    const res = await fetch(`${API}/api/locations`);
+    const data = await res.json();
+    locations = data.locations || [];
+    renderList();
+    renderMarkers();
+  } catch (e) {
+    document.getElementById('locationList').innerHTML = `
+      <div style="color:var(--text-muted);font-size:.85rem;text-align:center;padding:40px 20px;">
+        Could not load locations.<br>Make sure the server is running.
+      </div>`;
+  }
+}
+
+function getLocationStatus(loc) {
+  const spots = loc.spots || [];
+  if (!spots.length) return 'available';
+  const avail = spots.filter(s => s.status === 'available').length;
+  const presale = spots.filter(s => s.status === 'presale').length;
+  if (avail > 0) return 'available';
+  if (presale > 0) return 'presale';
+  return 'claimed';
+}
+
+function formatTraffic(n) {
+  if (n >= 1000) return (n/1000).toFixed(1) + 'k';
+  return n;
+}
+
+function renderList() {
+  const search = document.getElementById('searchInput').value.toLowerCase();
+  let filtered = locations.filter(l => {
+    const matchSearch = !search || l.name.toLowerCase().includes(search) || l.address.toLowerCase().includes(search);
+    const status = getLocationStatus(l);
+    let matchFilter = true;
+    if (activeFilter === 'available') matchFilter = status === 'available';
+    else if (activeFilter === 'presale') matchFilter = status === 'presale';
+    else if (activeFilter === 'high-traffic') matchFilter = l.daily_foot_traffic >= 6000;
+    return matchSearch && matchFilter;
+  });
+
+  const list = document.getElementById('locationList');
+  if (!filtered.length) {
+    list.innerHTML = `<div style="color:var(--text-muted);font-size:.85rem;text-align:center;padding:40px 20px;">No locations match your filter.</div>`;
+    return;
+  }
+
+  list.innerHTML = filtered.map(loc => {
+    const status = getLocationStatus(loc);
+    const spots = loc.spots || [];
+    const availCount = spots.filter(s => s.status === 'available').length;
+    const dotClass = status === 'available' ? 'available' : status === 'presale' ? 'presale' : 'full';
+    const availText = status === 'available' ? `${availCount} spot${availCount !== 1 ? 's' : ''} available`
+      : status === 'presale' ? 'Presale spots' : 'All spots claimed';
+    return `
+    <div class="loc-card ${activeLocId === loc.id ? 'active' : ''}" onclick="selectLocation('${loc.id}')">
+      <div class="loc-card-name">${loc.name}</div>
+      <div class="loc-card-addr">${loc.address}</div>
+      <div class="loc-card-stats">
+        <div class="loc-stat">
+          <div class="loc-stat-val">${formatTraffic(loc.daily_foot_traffic)}/day</div>
+          <div class="loc-stat-label">Daily Foot Traffic</div>
+        </div>
+        <div class="loc-stat">
+          <div class="loc-stat-val">$${loc.base_monthly_price}/mo</div>
+          <div class="loc-stat-label">Starting Price</div>
+        </div>
+      </div>
+      <div class="loc-availability">
+        <div class="avail-dot ${dotClass}"></div>
+        <div class="avail-text">${availText}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderMarkers() {
+  Object.values(markers).forEach(m => map.removeLayer(m));
+  markers = {};
+  locations.forEach(loc => {
+    if (!loc.latitude || !loc.longitude) return;
+    const status = getLocationStatus(loc);
+    const color = iconColors[status] || iconColors.default;
+    const m = L.marker([loc.latitude, loc.longitude], { icon: makeIcon(color) })
+      .addTo(map)
+      .on('click', () => selectLocation(loc.id));
+    m.bindTooltip(loc.name, { permanent: false, className: 'map-tooltip', direction: 'top' });
+    markers[loc.id] = m;
+  });
+}
+
+function selectLocation(id) {
+  activeLocId = id;
+  const loc = locations.find(l => String(l.id) === String(id));
+  if (!loc) return;
+
+  // Fly to
+  map.flyTo([loc.latitude, loc.longitude], 16, { duration: 1 });
+
+  // Highlight card
+  document.querySelectorAll('.loc-card').forEach(el => el.classList.remove('active'));
+  renderList();
+
+  // Show detail panel
+  showDetail(loc);
+}
+
+function showDetail(loc) {
+  const spots = loc.spots || [];
+  const status = getLocationStatus(loc);
+  const spotsHtml = spots.length ? spots.map(s => `
+    <div class="spot-item">
+      <span class="spot-name">${s.name || 'Slot'}</span>
+      ${s.status === 'available' ? `<span class="spot-price">$${s.custom_price || loc.base_monthly_price}/mo</span>` : '<span class="spot-price" style="color:var(--text-muted)">—</span>'}
+      <span class="spot-status badge ${s.status === 'available' ? 'badge-success' : s.status === 'presale' ? 'badge-warning' : 'badge-danger'}">${s.status}</span>
+    </div>`).join('') : `<div style="color:var(--text-muted);font-size:.82rem;">No spots configured yet.</div>`;
+
+  const total    = spots.length;
+  const claimed  = spots.filter(s => s.status === 'claimed' || s.status === 'presale').length;
+  const claimPct = total > 0 ? Math.round((claimed / total) * 100) : 0;
+  const barColor = claimPct >= 80 ? 'var(--danger)' : claimPct >= 50 ? 'var(--warning)' : 'var(--success)';
+
+  document.getElementById('detailContent').innerHTML = `
+    <div class="detail-name">${loc.name}</div>
+    <div class="detail-addr">📍 ${loc.address}</div>
+    <div class="detail-grid">
+      <div class="detail-stat">
+        <div class="detail-stat-val">${formatTraffic(loc.daily_foot_traffic)}/day</div>
+        <div class="detail-stat-label">Foot Traffic</div>
+      </div>
+      <div class="detail-stat">
+        <div class="detail-stat-val">$${loc.base_monthly_price}/mo</div>
+        <div class="detail-stat-label">Starting Price</div>
+      </div>
+    </div>
+    <div style="margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span style="font-size:12px;font-weight:600;color:var(--text-secondary);letter-spacing:.04em;text-transform:uppercase">Screen Occupancy</span>
+        <span style="font-size:12px;font-weight:700;color:${barColor}">${claimed}/${total} claimed</span>
+      </div>
+      <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+        <div style="height:100%;width:${claimPct}%;background:${barColor};border-radius:3px;transition:width .6s"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:4px">
+        <span style="font-size:11px;color:var(--text-muted)">${total - claimed} spot${total - claimed !== 1 ? 's' : ''} still open</span>
+        <span style="font-size:11px;color:var(--text-muted)">${claimPct}% full</span>
+      </div>
+    </div>
+    ${loc.description ? `<p style="font-size:.82rem;color:var(--text-secondary);margin-bottom:12px;">${loc.description}</p>` : ''}
+    <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;">Available Spots</div>
+    <div class="spot-list">${spotsHtml}</div>
+    <a href="/dashboard.html#claim" class="btn btn-primary" style="width:100%;text-align:center;">Claim a Spot →</a>
+  `;
+  document.getElementById('detailPanel').classList.add('show');
+}
+
+function closeDetail() {
+  document.getElementById('detailPanel').classList.remove('show');
+  activeLocId = null;
+  renderList();
+}
+
+// Search
+document.getElementById('searchInput').addEventListener('input', renderList);
+
+// Filter chips
+document.querySelectorAll('.filter-chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    activeFilter = chip.dataset.filter;
+    renderList();
+  });
+});
+
+// Nav auth state
+(function() {
+  const token = localStorage.getItem('vkw_token');
+  const user = JSON.parse(localStorage.getItem('vkw_user') || 'null');
+  const actions = document.getElementById('navActions');
+  if (token && user) {
+    actions.innerHTML = `
+      <a href="${user.role === 'admin' ? '/admin.html' : '/dashboard.html'}" class="btn btn-outline btn-sm" style="white-space:nowrap">Dashboard</a>
+      <button class="btn btn-ghost btn-sm" onclick="localStorage.clear();location.reload()" style="white-space:nowrap">Log Out</button>`;
+  }
+})();
+
+
+
+loadLocations();
+</script>
+<script src="/js/db-status.js"></script>
+</body>
+</html>

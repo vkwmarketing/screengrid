@@ -1,0 +1,1764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Admin Portal — ScreenGrid</title>
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    body { display: flex; min-height: 100vh; }
+    .sidebar {
+      width: 260px;
+      min-height: 100vh;
+      background: var(--bg-surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      top: 0; left: 0; bottom: 0;
+      z-index: 50;
+    }
+    .sidebar-logo { padding: 24px 20px; border-bottom: 1px solid var(--border); }
+    .sidebar-logo-text { font-family: var(--font-display); font-size: 18px; font-weight: 800; text-transform: none; letter-spacing: 0; }
+    .sidebar-logo-text span { color: var(--blue); }
+    .admin-badge { background: var(--danger-dim); color: var(--danger); border: 1px solid rgba(228,91,91,0.25); border-radius: 100px; font-size: 10px; font-weight: 700; letter-spacing: 1px; padding: 2px 8px; margin-top: 4px; display: inline-block; }
+    .sidebar-nav { flex: 1; padding: 16px 12px; }
+    .sidebar-section { font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--text-faint); padding: 16px 14px 6px; }
+    .sidebar-item { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: var(--radius); cursor: pointer; font-size: 14px; font-weight: 500; color: var(--text-secondary); transition: var(--transition); margin-bottom: 2px; }
+    .sidebar-item:hover { background: var(--blue-muted); color: var(--text-primary); }
+    .sidebar-item.active { background: var(--blue-muted); color: var(--accent); border-left: 3px solid var(--blue); padding-left: 11px; }
+    .sidebar-item .icon { font-size: 17px; width: 22px; text-align: center; }
+    .sidebar-item .count { margin-left: auto; background: var(--danger); color: #fff; border-radius: 100px; font-size: 10px; font-weight: 700; padding: 1px 7px; }
+    .main { margin-left: 260px; flex: 1; background: var(--bg-base); }
+    .topbar { height: 64px; display: flex; align-items: center; padding: 0 32px; border-bottom: 1px solid var(--border); background: var(--bg-surface); justify-content: space-between; }
+    .page-content { padding: 32px; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* Ad review card */
+    .review-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+    .review-card-header { display: flex; align-items: center; gap: 16px; padding: 20px 24px; border-bottom: 1px solid var(--border); }
+    .review-card-body { padding: 20px 24px; }
+    .review-ad-preview { width: 120px; height: 80px; border-radius: var(--radius); background: var(--bg-surface); object-fit: cover; flex-shrink: 0; }
+
+    /* Location form */
+    .map-picker { height: 300px; border-radius: var(--radius); border: 1px solid var(--border); margin-bottom: 16px; }
+
+    /* Stats ring */
+    .stat-ring { position: relative; display: inline-flex; align-items: center; justify-content: center; }
+
+    #adminTopbar { display: none; }
+    @media (max-width: 768px) {
+      #adminTopbar { display: flex !important; }
+      /* Sidebar hidden by default, slides in */
+      .sidebar { transform: translateX(-100%); transition: transform 0.3s ease; z-index: 200; }
+      .sidebar.open { transform: translateX(0); }
+      .main { margin-left: 0 !important; padding: 70px 12px 20px !important; }
+
+      /* Stats 2 columns */
+      #admin-stats { grid-template-columns: 1fr 1fr !important; gap: 10px !important; }
+      .grid-4 { grid-template-columns: 1fr 1fr !important; }
+
+      /* Tables scroll */
+      .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      table { min-width: 500px; }
+
+      /* Modals full width */
+      .modal-overlay { align-items: flex-end !important; padding: 0 !important; }
+      .modal { border-radius: 16px 16px 0 0 !important; max-height: 90vh !important; overflow-y: auto !important; width: 100% !important; max-width: 100% !important; }
+
+      /* Location cards wrap buttons */
+      .loc-actions { flex-wrap: wrap !important; gap: 6px !important; }
+    }
+  </style>
+</head>
+<body>
+  <!-- MOBILE TOPBAR (hidden on desktop via CSS) -->
+  <div id="adminTopbar" style="position:fixed;top:0;left:0;right:0;height:56px;background:var(--bg-surface);border-bottom:1px solid var(--border);z-index:300;align-items:center;padding:0 16px;gap:12px">
+    <button onclick="toggleAdminSidebar()" style="background:none;border:none;color:var(--text-primary);font-size:26px;cursor:pointer;padding:4px 8px;line-height:1;border-radius:8px">☰</button>
+    <span style="font-family:var(--font-display);font-size:18px;font-weight:800"><span style="color:var(--text-primary)">Screen</span><span style="color:var(--blue)">Grid</span></span>
+    <span style="color:var(--text-muted);font-size:12px">Admin</span>
+  </div>
+  <!-- SIDEBAR OVERLAY -->
+  <div id="sidebarOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:199" onclick="toggleAdminSidebar()"></div>
+
+  <!-- SIDEBAR -->
+  <div class="sidebar" id="adminSidebar">
+    <div class="sidebar-logo">
+      <div class="sidebar-logo-text"><span style="white-space:nowrap"><span style="color:var(--text-primary)">Screen</span><span style="color:var(--blue)">Grid</span></span></div>
+      <span class="admin-badge">ADMIN PORTAL</span>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="sidebar-item active" onclick="showTab('dashboard')">
+        <span class="icon">📊</span> Dashboard
+      </div>
+      <div class="sidebar-section">Review Queue</div>
+      <div class="sidebar-item" onclick="showTab('ads')">
+        <span class="icon">🖼️</span> Pending Ads
+        <span class="count" id="ads-count" style="display:none">0</span>
+      </div>
+      <div class="sidebar-item" onclick="showTab('panels')">
+        <span class="icon">🎟️</span> Coupon Panels
+        <span class="count" id="panels-count" style="display:none">0</span>
+      </div>
+      <div class="sidebar-section">Management</div>
+      <div class="sidebar-item" onclick="showTab('locations')">
+        <span class="icon">📍</span> Locations
+      </div>
+      <div class="sidebar-item" onclick="showTab('spots')">
+        <span class="icon">📺</span> All Spots
+      </div>
+      <div class="sidebar-item" onclick="showTab('businesses')">
+        <span class="icon">🏢</span> Businesses
+      </div>
+      <div class="sidebar-item" onclick="showTab('all-ads')">
+        <span class="icon">📁</span> All Ads
+      </div>
+      <div class="sidebar-item" onclick="showTab('approved-ads')">
+        <span class="icon">✅</span> Approved Ads
+      </div>
+      <div class="sidebar-item" onclick="showTab('approved-panels')">
+        <span class="icon">🎟️</span> Approved Panels
+      </div>
+      <div class="sidebar-item" onclick="showTab('offers')">
+        <span class="icon">🎁</span> Offers
+      </div>
+    </nav>
+    <div style="padding:16px 12px;border-top:1px solid var(--border)">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="font-size:13px;color:var(--text-muted)" id="admin-email-display">Admin</div>
+        <button onclick="logout()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:13px">Logout ↩</button>
+      </div>
+      <a href="/" style="font-size:12px;color:var(--text-faint)">← View Site</a>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="topbar">
+      <div>
+        <h4 id="page-title">Admin Dashboard</h4>
+        <div style="font-size:12px;color:var(--text-muted)">ScreenGrid Control Panel</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary btn-sm" onclick="showTab('locations');document.getElementById('new-location-form').style.display='block'">+ New Location</button>
+      </div>
+    </div>
+
+    <div class="page-content">
+
+      <!-- DASHBOARD -->
+      <div class="tab-panel active" id="tab-dashboard">
+        <div class="grid-4" style="margin-bottom:32px" id="admin-stats">
+          <div class="card card-sm" style="text-align:center"><div class="stat-number" id="st-biz">—</div><div class="stat-label">Businesses</div></div>
+          <div class="card card-sm" style="text-align:center"><div class="stat-number" id="st-pending">—</div><div class="stat-label">Pending Ads</div></div>
+          <div class="card card-sm" style="text-align:center"><div class="stat-number" id="st-spots">—</div><div class="stat-label">Claimed Spots</div></div>
+          <div class="card card-sm" style="text-align:center"><div class="stat-number" id="st-revenue" style="font-size:36px">—</div><div class="stat-label">Total Revenue</div></div>
+        </div>
+        <div class="grid-2">
+          <div>
+            <h4 style="margin-bottom:16px">Pending Review</h4>
+            <div class="card card-sm" style="cursor:pointer;margin-bottom:10px" onclick="showTab('ads')">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <div><div style="font-weight:600">Ad Creatives</div><div style="font-size:13px;color:var(--text-muted)">Waiting for your review</div></div>
+                <span id="dash-ads-count" class="badge badge-yellow">0 pending</span>
+              </div>
+            </div>
+            <div class="card card-sm" style="cursor:pointer" onclick="showTab('panels')">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <div><div style="font-weight:600">Coupon Panels</div><div style="font-size:13px;color:var(--text-muted)">Panels awaiting approval</div></div>
+                <span id="dash-panels-count" class="badge badge-yellow">0 pending</span>
+              </div>
+            </div>
+          </div>
+          <div>
+            <h4 style="margin-bottom:16px">Recent Activity</h4>
+            <div id="admin-activity">
+              <div style="text-align:center;padding:40px;color:var(--text-muted)">Loading...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PENDING ADS -->
+      <div class="tab-panel" id="tab-ads">
+        <h3 style="margin-bottom:24px">Pending Ad Review</h3>
+        <div id="pending-ads-list">
+          <div style="text-align:center;padding:60px;color:var(--text-muted)">Loading...</div>
+        </div>
+      </div>
+
+      <!-- COUPON PANELS -->
+      <div class="tab-panel" id="tab-panels">
+        <h3 style="margin-bottom:24px">Pending Coupon Panels</h3>
+        <div id="pending-panels-list">
+          <div style="text-align:center;padding:60px;color:var(--text-muted)">Loading...</div>
+        </div>
+      </div>
+
+      <!-- LOCATIONS -->
+      <div class="tab-panel" id="tab-locations">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
+          <h3>Advertising Locations</h3>
+          <button class="btn btn-primary btn-sm" onclick="toggleNewLocationForm()">+ Add Location</button>
+        </div>
+
+        <!-- New location form -->
+        <div id="new-location-form" style="display:none;margin-bottom:32px">
+          <div class="card">
+            <h4 style="margin-bottom:20px">📍 Add New Location</h4>
+            <div id="location-map-picker" class="map-picker"></div>
+            <div style="font-size:13px;color:var(--text-muted);margin-bottom:16px">🖱️ Click on the map to set location coordinates</div>
+            <div class="grid-2" style="margin-bottom:16px">
+              <div class="form-group">
+                <label class="form-label">Location Name *</label>
+                <input type="text" class="form-input" id="loc-name" placeholder="e.g. King St & Queen St Corner">
+              </div>
+              <div class="form-group">
+                <label class="form-label">City *</label>
+                <input type="text" class="form-input" id="loc-city" placeholder="Kitchener">
+              </div>
+            </div>
+            <div class="form-group" style="margin-bottom:16px;position:relative">
+              <label class="form-label">Street Address *</label>
+              <input type="text" class="form-input" id="loc-address" placeholder="Start typing an address..." autocomplete="off" oninput="addressSearch(this.value)">
+              <div id="address-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:1000;background:var(--bg-card);border:1px solid var(--blue);border-top:none;border-radius:0 0 8px 8px;max-height:220px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.4)"></div>
+            </div>
+            <div class="grid-2" style="margin-bottom:16px">
+              <div class="form-group">
+                <label class="form-label">Latitude</label>
+                <input type="number" class="form-input" id="loc-lat" step="0.0001" placeholder="43.4516">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Longitude</label>
+                <input type="number" class="form-input" id="loc-lng" step="0.0001" placeholder="-80.4925">
+              </div>
+            </div>
+            <div class="grid-3" style="margin-bottom:16px">
+              <div class="form-group">
+                <label class="form-label">Daily Foot Traffic</label>
+                <input type="number" class="form-input" id="loc-daily" placeholder="5000">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Weekly Foot Traffic</label>
+                <input type="number" class="form-input" id="loc-weekly" placeholder="35000">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Monthly Foot Traffic</label>
+                <input type="number" class="form-input" id="loc-monthly" placeholder="150000">
+              </div>
+            </div>
+            <div class="grid-3" style="margin-bottom:16px">
+              <div class="form-group">
+                <label class="form-label">Number of Ad Slots</label>
+                <input type="number" class="form-input" id="loc-slots" placeholder="2" min="1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Monthly Price ($)</label>
+                <input type="number" class="form-input" id="loc-monthly-price" placeholder="125">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Pre-Sale Price ($)</label>
+                <input type="number" class="form-input" id="loc-presale-price" placeholder="50">
+              </div>
+            </div>
+            <div class="form-group" style="margin-bottom:20px">
+              <label class="form-label">Description</label>
+              <textarea class="form-textarea" id="loc-description" placeholder="Describe this location's advantages..."></textarea>
+            </div>
+            <div style="display:flex;gap:12px">
+              <button class="btn btn-primary" onclick="createLocation()">✓ Create Location</button>
+              <button class="btn btn-outline" onclick="document.getElementById('new-location-form').style.display='none'">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="locations-list">
+          <div style="text-align:center;padding:60px;color:var(--text-muted)">Loading...</div>
+        </div>
+      </div>
+
+      <!-- ALL SPOTS -->
+      <div class="tab-panel" id="tab-spots">
+        <h3 style="margin-bottom:24px">All Ad Spots</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Location</th><th>Spot</th><th>Status</th><th>Business</th><th>Claimed</th><th>Expires</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="spots-table">
+              <tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text-muted)">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- APPROVED ADS -->
+      <div class="tab-panel" id="tab-approved-ads">
+        <h3 style="margin-bottom:24px">Approved Ads</h3>
+        <div id="approved-ads-list"><div style="text-align:center;padding:40px;color:var(--text-muted)">Loading...</div></div>
+      </div>
+
+      <!-- APPROVED PANELS -->
+      <div class="tab-panel" id="tab-approved-panels">
+        <h3 style="margin-bottom:24px">Approved Coupon Panels</h3>
+        <div id="approved-panels-list"><div style="text-align:center;padding:40px;color:var(--text-muted)">Loading...</div></div>
+      </div>
+
+      <!-- OFFERS -->
+      <div class="tab-panel" id="tab-offers">
+        <h3 style="margin-bottom:24px">Private Offers</h3>
+        <div id="all-offers-list"><div style="text-align:center;padding:40px;color:var(--text-muted)">Loading...</div></div>
+      </div>
+
+      <!-- BUSINESSES -->
+      <div class="tab-panel" id="tab-businesses">
+        <h3 style="margin-bottom:24px">Registered Businesses</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Business</th><th>Email</th><th>Contact</th><th>Spots</th><th>Ads</th><th>Total Paid</th><th>Joined</th><th></th></tr>
+            </thead>
+            <tbody id="businesses-table" style="width:100%">
+              <tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text-muted)">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ALL ADS -->
+      <div class="tab-panel" id="tab-all-ads">
+        <h3 style="margin-bottom:24px">All Submitted Ads</h3>
+        <div id="all-ads-list">
+          <div style="text-align:center;padding:60px;color:var(--text-muted)">Loading...</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- AD REVIEW MODAL -->
+  <div class="modal-overlay" id="review-modal">
+    <div class="modal" style="max-width:600px">
+      <div class="modal-header">
+        <h4 id="review-modal-title">Review Ad</h4>
+        <button class="modal-close" onclick="closeReviewModal()">×</button>
+      </div>
+      <div id="review-modal-body"></div>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toasts"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const token = localStorage.getItem('vkw_token');
+    const user = JSON.parse(localStorage.getItem('vkw_user') || '{}');
+    if (!token || user.role !== 'admin') { window.location.href = '/login.html'; }
+    document.getElementById('admin-email-display').textContent = user.email;
+
+    const api = (path, opts = {}) => fetch(path, {
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', ...(opts.headers || {}) },
+      ...opts
+    }).then(r => r.json());
+
+    function showTab(name) {
+      document.querySelectorAll('.tab-panel').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
+      document.getElementById('tab-' + name).classList.add('active');
+      document.getElementById('page-title').textContent = {
+        dashboard: 'Admin Dashboard', ads: 'Pending Ads', panels: 'Coupon Panels',
+        locations: 'Locations', spots: 'All Spots', businesses: 'Businesses', 'all-ads': 'All Ads', 'approved-ads': 'Approved Ads', 'approved-panels': 'Approved Panels', offers: 'Offers'
+      }[name] || name;
+
+      if (name === 'ads') loadPendingAds();
+      if (name === 'panels') loadPendingPanels();
+      if (name === 'locations') { loadLocations(); initMapPicker(); }
+      if (name === 'spots') loadSpots();
+      if (name === 'businesses') loadBusinesses();
+      if (name === 'all-ads') loadAllAds();
+      if (name === 'approved-ads') loadApprovedAds();
+      if (name === 'approved-panels') loadApprovedPanels();
+      if (name === 'offers') loadAllOffers();
+    }
+
+    // ── Dashboard ──
+    async function loadDashboard() {
+      const stats = await api('/api/admin/stats');
+      document.getElementById('st-biz').textContent = stats.total_businesses;
+      document.getElementById('st-pending').textContent = stats.pending_ads + stats.pending_panels;
+      document.getElementById('st-spots').textContent = `${stats.claimed_spots}/${stats.total_spots}`;
+      document.getElementById('st-revenue').textContent = '$' + (stats.total_revenue || 0).toFixed(0);
+      document.getElementById('dash-ads-count').textContent = stats.pending_ads + ' pending';
+      document.getElementById('dash-panels-count').textContent = stats.pending_panels + ' pending';
+
+      if (stats.pending_ads > 0) { document.getElementById('ads-count').textContent = stats.pending_ads; document.getElementById('ads-count').style.display = 'inline'; }
+      if (stats.pending_panels > 0) { document.getElementById('panels-count').textContent = stats.pending_panels; document.getElementById('panels-count').style.display = 'inline'; }
+
+      // Recent activity
+      const notifs = await api('/api/admin/notifications');
+      const act = document.getElementById('admin-activity');
+      act.innerHTML = notifs.slice(0, 5).map(n => `
+        <div class="card card-sm" style="margin-bottom:8px;display:flex;gap:12px;align-items:center">
+          <div style="font-size:18px">${n.type.includes('approved')?'✅':n.type.includes('rejected')?'❌':'🔔'}</div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:600;color:var(--text-primary)">${n.title}</div>
+            <div style="font-size:12px;color:var(--text-muted)">${n.business_name||''} · ${new Date(n.created_at).toLocaleDateString()}</div>
+          </div>
+        </div>
+      `).join('') || '<div style="text-align:center;color:var(--text-muted);font-size:14px">No recent activity</div>';
+    }
+
+    // ── Pending Ads ──
+    async function loadPendingAds() {
+      const ads = await api('/api/ads/pending');
+      const container = document.getElementById('pending-ads-list');
+      if (!ads.length) {
+        container.innerHTML = '<div class="card" style="text-align:center;padding:60px"><div style="font-size:48px;margin-bottom:16px">✅</div><h4>All Clear!</h4><p style="margin-top:8px">No ads pending review.</p></div>';
+        return;
+      }
+      container.innerHTML = ads.map(ad => `
+        <div class="review-card">
+          <div class="review-card-header">
+            ${ad.file_type?.includes('image') ? `<img src="/uploads/${ad.file_url}" class="review-ad-preview" onerror="this.style.background='var(--bg-card)'">` : '<div class="review-ad-preview" style="display:flex;align-items:center;justify-content:center;font-size:32px">🎬</div>'}
+            <div style="flex:1">
+              <div style="font-weight:700;color:var(--text-primary);font-size:16px">${ad.title}</div>
+              <div style="font-size:13px;color:var(--text-muted);margin-top:4px">By <strong>${ad.business_name}</strong> · ${ad.email}</div>
+              <div style="font-size:13px;color:var(--text-muted)">Submitted ${new Date(ad.submitted_at).toLocaleDateString()}</div>
+            </div>
+            <span class="badge badge-yellow">Pending</span>
+          </div>
+          <div class="review-card-body">
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn btn-outline btn-sm" onclick="previewMedia('/uploads/${ad.file_url}', '${ad.file_type || ''}', '${ad.title}')">👁️ Preview Ad</button>
+              <button class="btn btn-success btn-sm" onclick="approveAd('${ad.id}')">✓ Approve</button>
+              <button class="btn btn-sm btn-ghost" onclick="openReviewModal('${ad.id}', '${ad.title}', 'improve')">✨ Improve & Return</button>
+              <button class="btn btn-danger btn-sm" onclick="openReviewModal('${ad.id}', '${ad.title}', 'reject')">✗ Reject</button>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // ── Pending Panels ──
+    async function loadPendingPanels() {
+      const panels = await api('/api/redirects/pending');
+      const container = document.getElementById('pending-panels-list');
+      if (!panels.length) {
+        container.innerHTML = '<div class="card" style="text-align:center;padding:60px"><div style="font-size:48px;margin-bottom:16px">✅</div><h4>No Panels Pending</h4></div>';
+        return;
+      }
+      container.innerHTML = panels.map(p => `
+        <div class="review-card">
+          <div class="review-card-header">
+            <div style="width:80px;height:60px;border-radius:var(--radius);background:${p.panel_bg_color||'#0A1628'};display:flex;align-items:center;justify-content:center;flex-shrink:0;border:1px solid var(--border)">
+              <span style="font-size:24px">🎟️</span>
+            </div>
+            <div style="flex:1">
+              <div style="font-family:var(--font-mono);font-size:15px;color:var(--accent);font-weight:600">screengrid.co/${p.slug}</div>
+              <div style="font-size:13px;color:var(--text-muted)">By <strong>${p.business_name || p.biz_name}</strong></div>
+              <div style="font-size:13px;color:var(--text-muted)">Headline: ${p.panel_headline || 'None'} · Code: <strong>${p.coupon_code || 'None'}</strong></div>
+            </div>
+            <span class="badge badge-yellow">Pending</span>
+          </div>
+          <div class="review-card-body">
+            <div style="display:flex;gap:8px">
+              <a href="/api/redirects/preview/${p.id}?token=${localStorage.getItem('vkw_token')}" target="_blank" class="btn btn-outline btn-sm">👁️ Preview</a>
+              <button class="btn btn-success btn-sm" onclick="approvePanel('${p.id}')">✓ Approve</button>
+              <button class="btn btn-danger btn-sm" onclick="rejectPanel('${p.id}')">✗ Reject</button>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // ── Locations ──
+    let pickerMap, pickerMarker;
+    function initMapPicker() {
+      if (pickerMap) return;
+      setTimeout(() => {
+        pickerMap = L.map('location-map-picker').setView([43.4516, -80.5], 13);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(pickerMap);
+        pickerMap.on('click', e => {
+          const { lat, lng } = e.latlng;
+          document.getElementById('loc-lat').value = lat.toFixed(6);
+          document.getElementById('loc-lng').value = lng.toFixed(6);
+          if (pickerMarker) pickerMap.removeLayer(pickerMarker);
+          pickerMarker = L.marker([lat, lng]).addTo(pickerMap);
+        });
+      }, 100);
+    }
+
+    function toggleNewLocationForm() {
+      const form = document.getElementById('new-location-form');
+      form.style.display = form.style.display === 'none' ? 'block' : 'none';
+      if (form.style.display === 'block') initMapPicker();
+    }
+
+    let _searchTimeout, _geocodeResults = [];
+    async function addressSearch(val) {
+      const dropdown = document.getElementById('address-dropdown');
+      clearTimeout(_searchTimeout);
+      if (!val || val.length < 3) { dropdown.style.display = 'none'; return; }
+      _searchTimeout = setTimeout(async () => {
+        try {
+          const res  = await fetch('https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=7&q=' + encodeURIComponent(val), {
+            headers: { 'Accept-Language': 'en' }
+          });
+          const data = await res.json();
+          if (!data.length) { dropdown.innerHTML = '<div style="padding:12px 14px;color:var(--text-muted);font-size:13px">No results found</div>'; dropdown.style.display = 'block'; return; }
+          _geocodeResults = data;
+          dropdown.innerHTML = data.map((r, i) => {
+            const road = r.address.road || r.address.pedestrian || r.address.suburb || r.display_name.split(',')[0];
+            const city = r.address.city || r.address.town || r.address.village || r.address.county || '';
+            const country = r.address.country || '';
+            const div = document.createElement('div');
+            div.style.cssText = 'padding:10px 14px;cursor:pointer;border-bottom:1px solid #1e3050;transition:.15s';
+            div.onmouseover = function(){ this.style.background='rgba(45,107,228,.15)'; };
+            div.onmouseout  = function(){ this.style.background=''; };
+            div.setAttribute('data-idx', i);
+            div.onclick = function(){ selectAddress(parseInt(this.getAttribute('data-idx'))); };
+            div.innerHTML = '<div style="font-size:13px;font-weight:600;color:#E8EFF8">' + road + (r.address.house_number ? ' ' + r.address.house_number : '') + '</div>' +
+              '<div style="font-size:12px;color:#4A6080;margin-top:2px">' + [city, r.address.state, country].filter(Boolean).join(', ') + '</div>';
+            return div.outerHTML;
+          }).join('');
+          dropdown.style.display = 'block';
+        } catch(e) { dropdown.style.display = 'none'; }
+      }, 350);
+    }
+
+    function selectAddress(i) {
+      const r = _geocodeResults[i];
+      const road = r.address.road || r.address.pedestrian || r.address.suburb || r.display_name.split(',')[0];
+      const houseNum = r.address.house_number ? r.address.house_number + ' ' : '';
+      const city = r.address.city || r.address.town || r.address.village || r.address.county || '';
+      document.getElementById('loc-address').value = houseNum + road;
+      document.getElementById('loc-city').value    = city;
+      document.getElementById('loc-lat').value     = parseFloat(r.lat).toFixed(6);
+      document.getElementById('loc-lng').value     = parseFloat(r.lon).toFixed(6);
+      document.getElementById('address-dropdown').style.display = 'none';
+      if (pickerMap) {
+        pickerMap.flyTo([parseFloat(r.lat), parseFloat(r.lon)], 17);
+        if (pickerMarker) pickerMap.removeLayer(pickerMarker);
+        pickerMarker = L.marker([parseFloat(r.lat), parseFloat(r.lon)]).addTo(pickerMap);
+      }
+    }
+
+    document.addEventListener('click', e => {
+      if (!e.target.closest('#loc-address') && !e.target.closest('#address-dropdown')) {
+        const d = document.getElementById('address-dropdown');
+        if (d) d.style.display = 'none';
+      }
+    });
+
+    async function loadLocations() {
+      const res = await fetch('/api/locations').then(r=>r.json());
+      const locs = res.locations || [];
+      const container = document.getElementById('locations-list');
+      _allLocations = locs;
+      container.innerHTML = locs.map(loc => `
+        <div class="card" style="margin-bottom:16px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
+            <div>
+              <h4>${loc.name}</h4>
+              <p style="font-size:14px;margin-top:2px">${loc.address}, ${loc.city}</p>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <span class="badge ${loc.is_active ? 'badge-green' : 'badge-red'}">${loc.is_active ? 'Active' : 'Inactive'}</span>
+              <span class="badge badge-blue">${loc.total_spots} slots</span>
+            ${launchBadge(loc.launch_date)}
+            <button class="btn btn-sm btn-ghost" onclick="openEditLocation('${loc.id}')" style="margin-left:4px">✏️ Edit</button>
+            <button class="btn btn-sm btn-ghost" onclick="openSlotEditor('${loc.id}', '${loc.name}', ${loc.total_spots})" style="margin-left:4px">🔢 Slots</button>
+            <button class="btn btn-sm ${loc.screen_config ? 'btn-ghost' : 'btn-outline'}" onclick="openScreenControl('${loc.id}', '${loc.name}')" style="margin-left:4px">${loc.screen_config ? '📺 Screen' : '⚙️ Setup Screen'}</button>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
+            <div style="text-align:center;padding:10px;background:var(--bg-surface);border-radius:var(--radius);border:1px solid var(--border)">
+              <div style="font-family:var(--font-display);font-size:20px;font-weight:800;color:var(--text-primary)">${loc.daily_foot_traffic?.toLocaleString()}</div>
+              <div style="font-size:11px;color:var(--text-muted)">Daily</div>
+            </div>
+            <div style="text-align:center;padding:10px;background:var(--bg-surface);border-radius:var(--radius);border:1px solid var(--border)">
+              <div style="font-family:var(--font-display);font-size:20px;font-weight:800;color:var(--text-primary)">${loc.available_spots}/${loc.total_spots}</div>
+              <div style="font-size:11px;color:var(--text-muted)">Available</div>
+            </div>
+            <div style="text-align:center;padding:10px;background:var(--bg-surface);border-radius:var(--radius);border:1px solid var(--border)">
+              <div style="font-family:var(--font-display);font-size:20px;font-weight:800;color:var(--text-primary)">$${loc.base_monthly_price}</div>
+              <div style="font-size:11px;color:var(--text-muted)">Monthly</div>
+            </div>
+            <div style="text-align:center;padding:10px;background:var(--bg-surface);border-radius:var(--radius);border:1px solid var(--border)">
+              <div style="font-family:var(--font-display);font-size:20px;font-weight:800;color:var(--text-primary)">$${loc.presale_price}</div>
+              <div style="font-size:11px;color:var(--text-muted)">Pre-sale</div>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function createLocation() {
+      const body = {
+        name: document.getElementById('loc-name').value,
+        address: document.getElementById('loc-address').value,
+        city: document.getElementById('loc-city').value,
+        latitude: parseFloat(document.getElementById('loc-lat').value),
+        longitude: parseFloat(document.getElementById('loc-lng').value),
+        daily_foot_traffic: parseInt(document.getElementById('loc-daily').value) || 0,
+        weekly_foot_traffic: parseInt(document.getElementById('loc-weekly').value) || 0,
+        monthly_foot_traffic: parseInt(document.getElementById('loc-monthly').value) || 0,
+        slot_count: parseInt(document.getElementById('loc-slots').value) || 1,
+        base_monthly_price: parseFloat(document.getElementById('loc-monthly-price').value) || 299,
+        presale_price: parseFloat(document.getElementById('loc-presale-price').value) || 50,
+        description: document.getElementById('loc-description').value,
+        launch_date: document.getElementById('loc-launch-date').value || null
+      };
+      if (!body.name || !body.address || !body.latitude || !body.longitude) { toast('Please fill in all required fields', 'error'); return; }
+      const r = await api('/api/locations', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','Authorization':'Bearer '+token},
+        body: JSON.stringify(body)
+      });
+      if (r.id) {
+        toast(`Location created with ${body.slot_count} slot(s)! 🎉`, 'success');
+        document.getElementById('new-location-form').style.display = 'none';
+        loadLocations();
+      } else { toast(r.error || 'Failed', 'error'); }
+    }
+
+    // ── Spots ──
+    async function loadSpots() {
+      const spots = await api('/api/admin/spots');
+      const tbody = document.getElementById('spots-table');
+      tbody.innerHTML = spots.map(s => `
+        <tr>
+          <td>
+            <div style="font-weight:600;color:var(--text-primary)">${s.location_name}</div>
+            <div style="font-size:12px;color:var(--text-muted)">${s.city}</div>
+          </td>
+          <td><strong style="color:var(--text-primary)">${s.name}</strong></td>
+          <td><span class="badge ${s.status==='available'?'badge-green':s.status==='presale'?'badge-yellow':'badge-blue'}">${s.status}</span></td>
+          <td>
+            ${s.claimed_by_name
+              ? `<div style="font-size:13px;color:var(--text-primary)">${s.claimed_by_name}</div>`
+              : '<span style="color:var(--text-muted)">—</span>'
+            }
+          </td>
+          <td>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="color:var(--text-primary);font-weight:600">$${s.custom_price || s.price || '—'}/mo</span>
+              ${s.custom_price ? '<span class="badge badge-yellow" style="font-size:10px;padding:2px 6px">Custom</span>' : ''}
+            </div>
+          </td>
+          <td style="color:var(--text-secondary);font-size:13px">${s.expires_at ? new Date(s.expires_at).toLocaleDateString() : '—'}</td>
+          <td>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-sm btn-ghost" onclick="openSetPrice('${s.id}', '${s.name}', ${s.custom_price || s.price || 0})">💲 Price</button>
+              ${s.status !== 'available' ? `<button class="btn btn-sm btn-danger" onclick="releaseSpot('${s.id}')">Release</button>` : ''}
+            </div>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    async function releaseSpot(id) {
+      if (!confirm('Release this spot? The business will lose access.')) return;
+      const r = await api(`/api/admin/spots/${id}/release`, {method:'POST'});
+      if (r.success) { toast('Spot released', 'success'); loadSpots(); } else toast(r.error,'error');
+    }
+
+    // ── Businesses ──
+    async function loadBusinesses() {
+      const businesses = await api('/api/admin/businesses');
+      const tbody = document.getElementById('businesses-table');
+      tbody.innerHTML = businesses.map(b => `
+        <tr>
+          <td><strong style="color:var(--text-primary)">${b.business_name}</strong></td>
+          <td style="font-family:var(--font-mono);font-size:13px">${b.email}</td>
+          <td>${b.contact_name || '—'}</td>
+          <td>${b.spots_count}</td>
+          <td>${b.ads_count}</td>
+          <td style="color:var(--success)"><strong>$${(b.total_paid||0).toFixed(2)}</strong></td>
+          <td>${new Date(b.created_at).toLocaleDateString()}</td>
+          <td style="white-space:nowrap"><button class="btn btn-sm btn-primary" style="padding:6px 10px;font-size:12px" onclick="openSendOffer('${b.id}', '${b.business_name}')">🎁 Offer</button></td>
+        </tr>
+      `).join('');
+    }
+
+
+    // ── Approved Ads ──
+    async function loadApprovedAds() {
+      const ads = await api('/api/ads/all');
+      const approved = (ads || []).filter(a => a.status === 'approved');
+      const container = document.getElementById('approved-ads-list');
+      if (!approved.length) {
+        container.innerHTML = '<div style="text-align:center;padding:60px;color:var(--text-muted)">No approved ads yet.</div>';
+        return;
+      }
+      container.innerHTML = approved.map(a => `
+        <div class="card" style="margin-bottom:12px;display:flex;align-items:center;gap:16px;padding:16px">
+          ${a.file_type?.includes('image') ? `<img src="/uploads/${a.file_url}" style="width:80px;height:54px;border-radius:6px;object-fit:cover;flex-shrink:0" onerror="this.style.background='var(--bg-card)'">` : '<div style="width:80px;height:54px;border-radius:6px;background:var(--bg-surface);display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0">🎬</div>'}
+          <div style="flex:1">
+            <div style="font-weight:700;color:var(--text-primary)">${a.title}</div>
+            <div style="font-size:13px;color:var(--text-muted)">${a.business_name} · ${a.email}</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Approved ${a.approved_at ? new Date(a.approved_at).toLocaleDateString() : '—'}</div>
+          </div>
+          <span class="badge badge-green">Approved</span>
+        </div>
+      `).join('');
+    }
+
+    // ── Approved Panels ──
+    async function loadApprovedPanels() {
+      const panels = await api('/api/redirects/pending');
+      // Fetch all panels including approved ones
+      const res = await fetch('/api/redirects/all', { headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' } }).then(r => r.json());
+      const approved = (res || []).filter(p => p.panel_status === 'approved' && p.use_panel);
+      const container = document.getElementById('approved-panels-list');
+      if (!approved.length) {
+        container.innerHTML = '<div style="text-align:center;padding:60px;color:var(--text-muted)">No approved panels yet.</div>';
+        return;
+      }
+      container.innerHTML = approved.map(p => `
+        <div class="card" style="margin-bottom:12px;padding:16px;display:flex;align-items:center;justify-content:space-between;gap:16px">
+          <div style="flex:1">
+            <div style="font-weight:700;color:var(--text-primary)">${p.business_name}</div>
+            <div style="font-family:var(--font-mono);font-size:13px;color:var(--accent);margin-top:2px">/${p.slug}</div>
+            ${p.coupon_code ? `<div style="font-size:13px;color:var(--text-muted);margin-top:4px">Code: <strong>${p.coupon_code}</strong> · ${p.coupon_description || ''}</div>` : ''}
+            <div style="font-size:12px;color:var(--text-muted);margin-top:4px">👀 ${p.scan_count || 0} scans</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span class="badge badge-green">Live</span>
+            <a href="/api/redirects/preview/${p.id}?token=${token}" target="_blank" class="btn btn-sm btn-ghost">👁️ Preview</a>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // ── All Offers ──
+    async function loadAllOffers() {
+      const offers = await api('/api/offers/all');
+      const container = document.getElementById('all-offers-list');
+      if (!offers || !offers.length) {
+        container.innerHTML = '<div style="text-align:center;padding:60px;color:var(--text-muted)">No offers sent yet.</div>';
+        return;
+      }
+      container.innerHTML = `
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Business</th><th>Location / Slot</th><th>Offered Price</th><th>Standard Price</th><th>Status</th><th>Sent</th></tr>
+            </thead>
+            <tbody>
+              ${offers.map(o => `
+                <tr>
+                  <td>
+                    <div style="font-weight:600;color:var(--text-primary)">${o.business_name}</div>
+                    <div style="font-size:12px;color:var(--text-muted)">${o.email}</div>
+                  </td>
+                  <td>
+                    <div>${o.location_name}</div>
+                    <div style="font-size:12px;color:var(--text-muted)">${o.spot_name}</div>
+                  </td>
+                  <td><strong style="color:var(--accent)">$${o.offered_price}/mo</strong></td>
+                  <td style="color:var(--text-muted);text-decoration:${o.status === 'accepted' ? 'line-through' : 'none'}">$${o.standard_price || '—'}/mo</td>
+                  <td>
+                    <span class="badge ${o.status === 'accepted' ? 'badge-green' : o.status === 'declined' ? 'badge-red' : 'badge-yellow'}">
+                      ${o.status === 'accepted' ? '✅ Accepted' : o.status === 'declined' ? '❌ Declined' : '⏳ Pending'}
+                    </span>
+                  </td>
+                  <td style="font-size:13px;color:var(--text-muted)">${new Date(o.created_at).toLocaleDateString()}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>`;
+    }
+
+    // ── All Ads ──
+    async function loadAllAds() {
+      const ads = await api('/api/ads/all');
+      const container = document.getElementById('all-ads-list');
+      container.innerHTML = `
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Business</th><th>Title</th><th>File</th><th>Status</th><th>Submitted</th><th>Actions</th></tr></thead>
+            <tbody>
+              ${ads.map(a => `
+                <tr>
+                  <td>${a.business_name}</td>
+                  <td>${a.title}</td>
+                  <td><button class="btn btn-sm btn-ghost" onclick="previewMedia('/uploads/${a.file_url}', '${a.file_type || ''}', '${a.title}')">👁️ View</button></td>
+                  <td><span class="badge ${a.status==='approved'?'badge-green':a.status==='pending'?'badge-yellow':a.status==='improved'?'badge-blue':'badge-red'}">${a.status}</span></td>
+                  <td>${new Date(a.submitted_at).toLocaleDateString()}</td>
+                  <td>${a.status==='pending'?`<button class="btn btn-sm btn-success" onclick="approveAd('${a.id}')">Approve</button>`:'—'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    // ── Ad Actions ──
+    async function approveAd(id, notes = '') {
+      const r = await api(`/api/ads/${id}/approve`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','Authorization':'Bearer '+token},
+        body: JSON.stringify({admin_notes: notes})
+      });
+      if (r.success) { toast('Ad approved! ✅', 'success'); loadPendingAds(); closeReviewModal(); }
+    }
+
+    let currentAdId = null, currentAdAction = null;
+    function openReviewModal(id, title, action) {
+      currentAdId = id; currentAdAction = action;
+      document.getElementById('review-modal-title').textContent = action === 'improve' ? `Improve Ad: ${title}` : `Reject Ad: ${title}`;
+      document.getElementById('review-modal-body').innerHTML = `
+        <div class="form-group" style="margin-bottom:16px">
+          <label class="form-label">Notes to Business *</label>
+          <textarea class="form-textarea" id="review-notes" placeholder="${action==='improve'?'Explain what changes were made...':'Explain why the ad was rejected and what needs to change...'}" required></textarea>
+        </div>
+        ${action==='improve'?`
+          <div class="form-group" style="margin-bottom:16px">
+            <label class="form-label">Upload Improved File</label>
+            <input type="file" class="form-input" id="improved-file" accept="image/*,video/*,.pdf">
+          </div>
+        `:''}
+        <div style="display:flex;gap:12px">
+          <button class="btn ${action==='improve'?'btn-primary':'btn-danger'}" onclick="submitReview()" style="flex:1;justify-content:center">
+            ${action==='improve'?'✨ Send Improved Version':'✗ Reject & Notify'}
+          </button>
+          <button class="btn btn-outline" onclick="closeReviewModal()">Cancel</button>
+        </div>
+      `;
+      document.getElementById('review-modal').classList.add('open');
+    }
+
+    async function submitReview() {
+      const notes = document.getElementById('review-notes').value;
+      if (!notes) { toast('Please add notes for the business', 'error'); return; }
+      if (currentAdAction === 'reject') {
+        const r = await api(`/api/ads/${currentAdId}/reject`, {
+          method:'POST',
+          headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+          body: JSON.stringify({admin_notes: notes})
+        });
+        if (r.success) { toast('Ad rejected & business notified', 'success'); closeReviewModal(); loadPendingAds(); }
+      } else if (currentAdAction === 'improve') {
+        const fd = new FormData();
+        fd.append('admin_notes', notes);
+        const file = document.getElementById('improved-file')?.files[0];
+        if (file) fd.append('file', file);
+        const r = await fetch(`/api/ads/${currentAdId}/improve`, {
+          method:'POST', headers:{'Authorization':'Bearer '+token}, body: fd
+        }).then(r=>r.json());
+        if (r.success) { toast('Improvement sent to business ✨', 'success'); closeReviewModal(); loadPendingAds(); }
+      }
+    }
+
+    async function approvePanel(id) {
+      const r = await api(`/api/redirects/${id}/approve`, {method:'POST'});
+      if (r.success) { toast('Panel approved! ✅', 'success'); loadPendingPanels(); }
+    }
+
+    async function rejectPanel(id) {
+      const reason = prompt('Rejection reason:');
+      if (!reason) return;
+      const r = await api(`/api/redirects/${id}/reject`, {
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+        body: JSON.stringify({reason})
+      });
+      if (r.success) { toast('Panel rejected', 'success'); loadPendingPanels(); }
+    }
+
+    function closeReviewModal() { document.getElementById('review-modal').classList.remove('open'); }
+
+    function logout() { localStorage.clear(); window.location.href = '/'; }
+
+    function toast(msg, type = 'info') {
+      const el = document.createElement('div');
+      el.className = `toast ${type}`;
+      el.textContent = msg;
+      document.getElementById('toasts').appendChild(el);
+      setTimeout(() => el.remove(), 3500);
+    }
+
+    document.querySelectorAll('.modal-overlay').forEach(o => {
+      o.addEventListener('click', e => { if (e.target === o) o.classList.remove('open'); });
+    });
+
+    loadDashboard();
+  </script>
+<script src="/js/db-status.js"></script>
+
+  <!-- SLOT EDITOR MODAL -->
+  <div class="modal-overlay" id="slot-modal">
+    <div class="modal" style="max-width:420px">
+      <div class="modal-header">
+        <h3 class="modal-title" id="slot-modal-title">Edit Ad Slots</h3>
+        <button class="modal-close" onclick="closeSlotModal()">✕</button>
+      </div>
+      <p style="color:var(--text-secondary);font-size:14px;margin-bottom:20px" id="slot-modal-desc"></p>
+      <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:20px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:16px">
+          <label class="form-label" style="margin:0">Number of Ad Slots</label>
+          <div style="display:flex;align-items:center;gap:10px">
+            <button onclick="adjustSlots(-1)" class="btn btn-ghost btn-sm" style="width:36px;height:36px;padding:0;font-size:18px">−</button>
+            <input type="number" id="slot-count-input" min="1" max="50" style="width:64px;text-align:center;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-size:18px;font-weight:700;padding:6px;font-family:var(--font-display)">
+            <button onclick="adjustSlots(1)" class="btn btn-ghost btn-sm" style="width:36px;height:36px;padding:0;font-size:18px">+</button>
+          </div>
+        </div>
+      </div>
+      <div class="alert alert-info" style="font-size:13px;margin-bottom:20px">
+        ⚠️ Claimed slots cannot be removed. Only available slots will be deleted when reducing.
+      </div>
+      <div id="slot-modal-error" style="display:none;font-size:13px;margin-bottom:16px;padding:12px;background:rgba(228,91,91,.1);border:1px solid var(--danger);border-radius:8px;color:var(--danger)"></div>
+      <div style="display:flex;gap:12px">
+        <button class="btn btn-primary" style="flex:1;justify-content:center" onclick="saveSlots()">Save Changes</button>
+        <button class="btn btn-ghost" onclick="closeSlotModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let _slotLocId = null;
+
+    function openSlotEditor(locId, locName, currentCount) {
+      _slotLocId = locId;
+      document.getElementById('slot-modal-title').textContent = `Edit Slots — ${locName}`;
+      document.getElementById('slot-modal-desc').textContent = `Currently ${currentCount} slot(s). Each slot is one advertiser position on this screen.`;
+      document.getElementById('slot-count-input').value = currentCount;
+      document.getElementById('slot-modal-error').style.display = 'none';
+      document.getElementById('slot-modal').classList.add('open');
+    }
+
+    function closeSlotModal() {
+      document.getElementById('slot-modal').classList.remove('open');
+      _slotLocId = null;
+    }
+
+    function adjustSlots(delta) {
+      const input = document.getElementById('slot-count-input');
+      const val = Math.max(1, Math.min(50, parseInt(input.value || 1) + delta));
+      input.value = val;
+    }
+
+    async function saveSlots() {
+      const count = parseInt(document.getElementById('slot-count-input').value);
+      const errEl = document.getElementById('slot-modal-error');
+      errEl.style.display = 'none';
+      if (!count || count < 1) return;
+
+      try {
+        const res = await fetch(`/api/admin/locations/${_slotLocId}/slots`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('vkw_token')}` },
+          body: JSON.stringify({ slot_count: count })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          errEl.textContent = data.error;
+          errEl.style.display = 'block';
+          return;
+        }
+        closeSlotModal();
+        await new Promise(r => setTimeout(r, 600)); // wait for DB to settle
+        await loadLocations();
+        toast(`Slots updated to ${data.slot_count} ✅`, 'success');
+      } catch(e) {
+        errEl.textContent = 'Failed to update slots';
+        errEl.style.display = 'block';
+      }
+    }
+  </script>
+
+
+  <!-- EDIT LOCATION MODAL -->
+  <div class="modal-overlay" id="edit-loc-modal">
+    <div class="modal" style="max-width:560px">
+      <div class="modal-header">
+        <h3 class="modal-title">Edit Location</h3>
+        <button class="modal-close" onclick="closeEditLocation()">✕</button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:14px;margin-top:4px">
+        <input type="hidden" id="edit-loc-id">
+        <div class="form-group">
+          <label class="form-label">Location Name *</label>
+          <input type="text" class="form-input" id="edit-loc-name">
+        </div>
+        <div class="grid-2" style="gap:12px">
+          <div class="form-group">
+            <label class="form-label">Address</label>
+            <input type="text" class="form-input" id="edit-loc-address">
+          </div>
+          <div class="form-group">
+            <label class="form-label">City</label>
+            <input type="text" class="form-input" id="edit-loc-city">
+          </div>
+        </div>
+        <div class="grid-2" style="gap:12px">
+          <div class="form-group">
+            <label class="form-label">Monthly Price ($)</label>
+            <input type="number" class="form-input" id="edit-loc-price" min="0">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Pre-sale Price ($)</label>
+            <input type="number" class="form-input" id="edit-loc-presale" min="0">
+          </div>
+        </div>
+        <div class="grid-2" style="gap:12px">
+          <div class="form-group">
+            <label class="form-label">Daily Foot Traffic</label>
+            <input type="number" class="form-input" id="edit-loc-daily" min="0">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Weekly Foot Traffic</label>
+            <input type="number" class="form-input" id="edit-loc-weekly" min="0">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Launch Date <span style="color:var(--text-muted);font-weight:400">(leave blank if already launched)</span></label>
+          <input type="datetime-local" class="form-input" id="edit-loc-launch">
+          <div style="font-size:12px;color:var(--text-muted);margin-top:6px">Presale pricing is shown to businesses only before this date.</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Description</label>
+          <textarea class="form-input" id="edit-loc-desc" rows="2" style="resize:vertical"></textarea>
+        </div>
+        <div style="display:flex;gap:12px;margin-top:4px">
+          <button class="btn btn-primary" style="flex:1;justify-content:center" onclick="saveEditLocation()">Save Changes</button>
+          <button class="btn btn-ghost" onclick="closeEditLocation()">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function launchBadge(dateStr) {
+      if (!dateStr) return '';
+      const future = new Date(dateStr) > new Date();
+      const label = future ? '🚀 Launches ' + new Date(dateStr).toLocaleDateString() : '✅ Live';
+      const cls   = future ? 'badge-yellow' : 'badge-green';
+      return '<span class="badge ' + cls + '" style="margin-left:4px">' + label + '</span>';
+    }
+
+    let _allLocations = [];
+
+    function openEditLocation(id) {
+      const loc = _allLocations.find(l => l.id === id);
+      if (!loc) return;
+      document.getElementById('edit-loc-id').value      = loc.id;
+      document.getElementById('edit-loc-name').value    = loc.name || '';
+      document.getElementById('edit-loc-address').value = loc.address || '';
+      document.getElementById('edit-loc-city').value    = loc.city || '';
+      document.getElementById('edit-loc-price').value   = loc.base_monthly_price || '';
+      document.getElementById('edit-loc-presale').value = loc.presale_price || '';
+      document.getElementById('edit-loc-daily').value   = loc.daily_foot_traffic || '';
+      document.getElementById('edit-loc-weekly').value  = loc.weekly_foot_traffic || '';
+      document.getElementById('edit-loc-desc').value    = loc.description || '';
+      // Format launch_date for datetime-local input
+      if (loc.launch_date) {
+        const d = new Date(loc.launch_date);
+        const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+        document.getElementById('edit-loc-launch').value = local;
+      } else {
+        document.getElementById('edit-loc-launch').value = '';
+      }
+      document.getElementById('edit-loc-modal').classList.add('open');
+    }
+
+    function closeEditLocation() {
+      document.getElementById('edit-loc-modal').classList.remove('open');
+    }
+
+    async function saveEditLocation() {
+      const id = document.getElementById('edit-loc-id').value;
+      const body = {
+        name:                 document.getElementById('edit-loc-name').value,
+        address:              document.getElementById('edit-loc-address').value,
+        city:                 document.getElementById('edit-loc-city').value,
+        base_monthly_price:   parseFloat(document.getElementById('edit-loc-price').value) || 299,
+        presale_price:        parseFloat(document.getElementById('edit-loc-presale').value) || 50,
+        daily_foot_traffic:   parseInt(document.getElementById('edit-loc-daily').value) || 0,
+        weekly_foot_traffic:  parseInt(document.getElementById('edit-loc-weekly').value) || 0,
+        description:          document.getElementById('edit-loc-desc').value,
+        launch_date:          document.getElementById('edit-loc-launch').value || null
+      };
+
+      try {
+        const res = await fetch(`/api/locations/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('vkw_token')}` },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (!res.ok) { toast(data.error || 'Failed to update', 'error'); return; }
+        toast('Location updated ✅', 'success');
+        closeEditLocation();
+        await loadLocations();
+      } catch(e) {
+        toast('Failed to update location', 'error');
+      }
+    }
+  </script>
+
+
+  <!-- SET CUSTOM PRICE MODAL -->
+  <div class="modal-overlay" id="set-price-modal">
+    <div class="modal" style="max-width:400px">
+      <div class="modal-header">
+        <h3 class="modal-title">Set Custom Price</h3>
+        <button class="modal-close" onclick="closeSetPrice()">✕</button>
+      </div>
+      <p style="color:var(--text-secondary);font-size:14px;margin-bottom:20px" id="set-price-desc"></p>
+      <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:16px">
+        <label class="form-label">Monthly Rate ($)</label>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:8px">
+          <span style="color:var(--text-muted);font-size:20px">$</span>
+          <input type="number" id="custom-price-input" class="form-input" min="0" step="1" style="font-size:20px;font-weight:700;font-family:var(--font-display)">
+          <span style="color:var(--text-muted);font-size:14px">/mo</span>
+        </div>
+      </div>
+      <div class="alert alert-info" style="font-size:13px;margin-bottom:16px">
+        💡 This overrides the location's standard price for this slot only. Great for negotiated deals or loyalty discounts.
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="btn btn-primary" style="justify-content:center" onclick="saveCustomPrice()">Save Price</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost" style="flex:1;justify-content:center;font-size:13px" onclick="resetCustomPrice()">↩ Reset to Standard</button>
+          <button class="btn btn-ghost" style="flex:1;justify-content:center;font-size:13px" onclick="closeSetPrice()">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let _priceSpotId = null;
+
+    function openSetPrice(spotId, spotName, currentPrice) {
+      _priceSpotId = spotId;
+      document.getElementById('set-price-desc').textContent = `Setting a custom price for ${spotName}. Leave at standard rate or enter a negotiated amount.`;
+      document.getElementById('custom-price-input').value = currentPrice || '';
+      document.getElementById('set-price-modal').classList.add('open');
+    }
+
+    function closeSetPrice() {
+      document.getElementById('set-price-modal').classList.remove('open');
+      _priceSpotId = null;
+    }
+
+    async function saveCustomPrice() {
+      const price = parseFloat(document.getElementById('custom-price-input').value);
+      if (!price || price < 0) { toast('Enter a valid price', 'error'); return; }
+      const r = await api(`/api/admin/spots/${_priceSpotId}/price`, {
+        method: 'POST',
+        body: JSON.stringify({ custom_price: price })
+      });
+      if (r.success) {
+        toast(`Custom price set to $${price}/mo ✅`, 'success');
+        closeSetPrice();
+        loadSpots();
+      } else {
+        toast(r.error || 'Failed to set price', 'error');
+      }
+    }
+
+    async function resetCustomPrice() {
+      if (!confirm('Reset this slot to the standard location price?')) return;
+      const r = await api(`/api/admin/spots/${_priceSpotId}/price`, {
+        method: 'POST',
+        body: JSON.stringify({ custom_price: null })
+      });
+      if (r.success) {
+        toast('Price reset to standard rate ✅', 'success');
+        closeSetPrice();
+        loadSpots();
+      } else {
+        toast(r.error || 'Failed to reset price', 'error');
+      }
+    }
+  </script>
+
+
+  <!-- SEND PRIVATE OFFER MODAL -->
+  <div class="modal-overlay" id="send-offer-modal">
+    <div class="modal" style="max-width:480px">
+      <div class="modal-header">
+        <h3 class="modal-title">🎁 Send Private Offer</h3>
+        <button class="modal-close" onclick="closeSendOffer()">✕</button>
+      </div>
+      <p style="color:var(--text-secondary);font-size:14px;margin-bottom:20px" id="send-offer-desc"></p>
+      <input type="hidden" id="offer-user-id">
+
+      <div class="form-group" style="margin-bottom:14px">
+        <label class="form-label">Select Ad Slot *</label>
+        <select class="form-input" id="offer-spot-id">
+          <option value="">Loading available slots...</option>
+        </select>
+        <div id="offer-slot-info" style="font-size:12px;color:var(--text-muted);margin-top:6px"></div>
+      </div>
+
+      <div class="form-group" style="margin-bottom:14px">
+        <label class="form-label">Offered Monthly Rate ($) *</label>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="color:var(--text-muted);font-size:20px">$</span>
+          <input type="number" class="form-input" id="offer-price" min="0" step="1" placeholder="e.g. 149">
+          <span style="color:var(--text-muted);font-size:14px">/mo</span>
+        </div>
+        <div id="offer-savings" style="font-size:12px;color:var(--success);margin-top:6px"></div>
+      </div>
+
+      <div class="form-group" style="margin-bottom:14px">
+        <label class="form-label">Months to Pay Upfront *</label>
+        <div style="display:flex;align-items:center;gap:10px">
+          <input type="number" class="form-input" id="offer-months" min="1" max="24" value="1" style="max-width:100px;font-size:18px;font-weight:700;font-family:var(--font-display);text-align:center">
+          <span style="color:var(--text-muted);font-size:14px">month(s) upfront</span>
+        </div>
+        <div id="offer-total" style="font-size:13px;color:var(--accent);margin-top:8px;font-weight:600"></div>
+      </div>
+
+      <div class="form-group" style="margin-bottom:20px">
+        <label class="form-label">Personal Message (optional)</label>
+        <textarea class="form-input" id="offer-message" rows="3" placeholder="e.g. Great meeting you at the market — here's the rate we discussed!"></textarea>
+      </div>
+
+      <div class="alert alert-info" style="font-size:13px;margin-bottom:16px">
+        💡 The business will see this offer on their dashboard and can accept or decline it. If accepted, they get the slot at this rate immediately.
+      </div>
+
+      <div style="display:flex;gap:12px">
+        <button class="btn btn-primary" style="flex:1;justify-content:center" onclick="sendOffer()">Send Offer →</button>
+        <button class="btn btn-ghost" onclick="closeSendOffer()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let _offerSpots = [];
+
+    async function openSendOffer(userId, businessName) {
+      document.getElementById('offer-user-id').value = userId;
+      document.getElementById('send-offer-desc').textContent = `Send a private discounted offer to ${businessName}. They'll see it on their dashboard.`;
+      document.getElementById('offer-price').value = '';
+      document.getElementById('offer-message').value = '';
+      document.getElementById('offer-savings').textContent = '';
+      document.getElementById('offer-slot-info').textContent = '';
+
+      // Load available slots
+      // Fetch full location data including slot names
+      const res = await fetch('/api/locations', { headers: authHeader() }).then(r => r.json());
+      const locs = res.locations || [];
+
+      // For each location, fetch full spot details including name
+      const locDetails = await Promise.all(locs.map(loc =>
+        fetch(`/api/locations/${loc.id}`, { headers: authHeader() }).then(r => r.json())
+      ));
+
+      _offerSpots = locDetails.flatMap(loc =>
+        (loc.spots || [])
+          .filter(s => s.status === 'available')
+          .map(s => ({ ...s, location_name: loc.name, standard_price: loc.base_monthly_price }))
+      );
+
+      const select = document.getElementById('offer-spot-id');
+      if (!_offerSpots.length) {
+        select.innerHTML = '<option value="">No available slots</option>';
+      } else {
+        select.innerHTML = '<option value="">Choose a slot...</option>' +
+          _offerSpots.map(s => `<option value="${s.id}">${s.location_name} — ${s.name} ($${s.standard_price}/mo standard)</option>`).join('');
+      }
+
+      document.getElementById('send-offer-modal').classList.add('open');
+    }
+
+    document.addEventListener('change', e => {
+      if (e.target.id === 'offer-spot-id') updateOfferInfo();
+      if (e.target.id === 'offer-price') updateOfferInfo();
+      if (e.target.id === 'offer-months') updateOfferInfo();
+    });
+    document.addEventListener('input', e => {
+      if (e.target.id === 'offer-price') updateOfferInfo();
+      if (e.target.id === 'offer-months') updateOfferInfo();
+    });
+
+    function updateOfferInfo() {
+      const spotId = document.getElementById('offer-spot-id').value;
+      const price  = parseFloat(document.getElementById('offer-price').value);
+      const spot   = _offerSpots.find(s => s.id === spotId);
+      const infoEl = document.getElementById('offer-slot-info');
+      const saveEl = document.getElementById('offer-savings');
+
+      if (spot) {
+        infoEl.textContent = `Standard rate: $${spot.standard_price}/mo`;
+        if (price && price < spot.standard_price) {
+          const saving = spot.standard_price - price;
+          const pct    = Math.round((saving / spot.standard_price) * 100);
+          saveEl.textContent = `✅ ${pct}% discount — saving them $${saving}/mo vs standard`;
+        } else if (price && price >= spot.standard_price) {
+          saveEl.textContent = '';
+          saveEl.style.color = 'var(--warning)';
+          saveEl.textContent = '⚠️ Offered price is at or above standard rate';
+        } else {
+          saveEl.textContent = '';
+        }
+      }
+    }
+
+    function closeSendOffer() {
+      document.getElementById('send-offer-modal').classList.remove('open');
+    }
+
+    async function sendOffer() {
+      const user_id      = document.getElementById('offer-user-id').value;
+      const spot_id      = document.getElementById('offer-spot-id').value;
+      const offered_price = parseFloat(document.getElementById('offer-price').value);
+      const message      = document.getElementById('offer-message').value;
+
+      if (!spot_id) { toast('Please select a slot', 'error'); return; }
+      if (!offered_price || offered_price <= 0) { toast('Please enter a valid price', 'error'); return; }
+
+      const months = parseInt(document.getElementById('offer-months').value) || 1;
+      const r = await api('/api/offers', {
+        method: 'POST',
+        body: JSON.stringify({ user_id, spot_id, offered_price, months, message })
+      });
+
+      if (r.success) {
+        toast('Offer sent! The business will see it on their dashboard ✅', 'success');
+        closeSendOffer();
+      } else {
+        toast(r.error || 'Failed to send offer', 'error');
+      }
+    }
+
+    function authHeader() {
+      return { 'Authorization': 'Bearer ' + localStorage.getItem('vkw_token'), 'Content-Type': 'application/json' };
+    }
+  </script>
+
+
+  <!-- MEDIA PREVIEW MODAL -->
+  <div class="modal-overlay" id="media-preview-modal" onclick="closeMediaPreview(event)">
+    <div class="modal" style="max-width:780px;padding:0;overflow:hidden;background:var(--bg-card)" onclick="event.stopPropagation()">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)">
+        <h4 id="media-preview-title" style="margin:0;color:var(--text-primary)"></h4>
+        <button onclick="closeMediaPreview()" style="background:none;border:none;color:var(--text-muted);font-size:22px;cursor:pointer;line-height:1">✕</button>
+      </div>
+      <div id="media-preview-body" style="display:flex;align-items:center;justify-content:center;min-height:300px;max-height:70vh;overflow:auto;background:#000;padding:0">
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function previewMedia(url, type, title) {
+      document.getElementById('media-preview-title').textContent = title || 'Ad Preview';
+      const body = document.getElementById('media-preview-body');
+      const isVideo = type?.includes('video') || /\.(mp4|mov|avi|webm)$/i.test(url);
+      const isPdf   = type?.includes('pdf')   || /\.pdf$/i.test(url);
+      const isGif   = /\.gif$/i.test(url);
+
+      if (isVideo) {
+        body.innerHTML = `<video controls autoplay style="max-width:100%;max-height:70vh;display:block">
+          <source src="${url}">Your browser does not support video.
+        </video>`;
+      } else if (isPdf) {
+        body.innerHTML = `<iframe src="${url}" style="width:100%;height:70vh;border:none"></iframe>`;
+      } else {
+        // image or gif
+        body.innerHTML = `<img src="${url}" style="max-width:100%;max-height:70vh;display:block;object-fit:contain">`;
+      }
+      document.getElementById('media-preview-modal').classList.add('open');
+    }
+
+    function closeMediaPreview(e) {
+      if (e && e.target !== document.getElementById('media-preview-modal')) return;
+      const modal = document.getElementById('media-preview-modal');
+      modal.classList.remove('open');
+      // Stop video/audio on close
+      const video = modal.querySelector('video');
+      if (video) video.pause();
+      document.getElementById('media-preview-body').innerHTML = '';
+    }
+
+    // Close on Escape
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') closeMediaPreview({ target: document.getElementById('media-preview-modal') });
+    });
+  </script>
+
+
+  <!-- SCREEN CONTROL MODAL -->
+  <div class="modal-overlay" id="screen-modal">
+    <div class="modal" style="max-width:640px">
+      <div class="modal-header">
+        <h3 class="modal-title" id="screen-modal-title">📺 Screen Control</h3>
+        <button class="modal-close" onclick="closeScreenModal()">✕</button>
+      </div>
+
+      <!-- TABS -->
+      <div style="display:flex;gap:4px;margin-bottom:20px;background:var(--bg-surface);border-radius:8px;padding:4px">
+        <button id="screen-tab-control" onclick="screenTab('control')" class="btn btn-sm btn-primary" style="flex:1;justify-content:center">🎮 Control</button>
+        <button id="screen-tab-config"  onclick="screenTab('config')"  class="btn btn-sm btn-ghost"   style="flex:1;justify-content:center">⚙️ Config</button>
+      </div>
+
+      <!-- CONTROL PANEL -->
+      <div id="screen-panel-control">
+        <div id="screen-not-configured" style="display:none;text-align:center;padding:40px;color:var(--text-muted)">
+          <div style="font-size:48px;margin-bottom:16px">⚙️</div>
+          <p>Screen not configured yet.</p>
+          <button class="btn btn-primary" style="margin-top:12px" onclick="screenTab('config')">Configure Now</button>
+        </div>
+        <div id="screen-control-ui">
+          <!-- Status -->
+          <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:16px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+              <span style="font-size:13px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.04em">Screen Status</span>
+              <button class="btn btn-sm btn-ghost" onclick="refreshScreenStatus()">↻ Refresh</button>
+            </div>
+            <div id="screen-status-display" style="font-size:13px;color:var(--text-muted)">Click Refresh to check status</div>
+          </div>
+
+          <!-- Power + Restart -->
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px">
+            <button class="btn btn-success" onclick="screenCmd('on')" style="justify-content:center">⚡ Screen On</button>
+            <button class="btn btn-danger"  onclick="screenCmd('off')" style="justify-content:center">⏻ Screen Off</button>
+            <button class="btn btn-ghost"   onclick="screenCmd('restart')" style="justify-content:center">↺ Restart</button>
+          </div>
+
+          <!-- Brightness -->
+          <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:16px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+              <span style="font-size:13px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.04em">Brightness</span>
+              <span id="brightness-val" style="font-family:var(--font-display);font-size:20px;font-weight:800;color:var(--accent)">70%</span>
+            </div>
+            <input type="range" id="brightness-slider" min="0" max="100" value="70"
+              style="width:100%;accent-color:var(--blue);cursor:pointer"
+              oninput="document.getElementById('brightness-val').textContent=this.value+'%'">
+            <button class="btn btn-primary btn-sm" style="margin-top:10px;width:100%;justify-content:center" onclick="setBrightness()">Set Brightness</button>
+          </div>
+
+          <!-- FTP Test -->
+          <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:16px">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <div>
+                <div style="font-size:13px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.04em">Connection Test</div>
+                <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Tests Tailscale + FTP connectivity to the screen</div>
+              </div>
+              <button class="btn btn-ghost btn-sm" onclick="ftpTest()">🔌 Test</button>
+            </div>
+            <div id="ftp-test-result" style="margin-top:10px;font-size:13px;display:none"></div>
+          </div>
+
+          <!-- Publish -->
+          <div style="background:linear-gradient(135deg,rgba(45,107,228,.1),rgba(45,107,228,.05));border:1px solid rgba(45,107,228,.3);border-radius:10px;padding:16px">
+            <div style="font-size:13px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Publish Ads to Screen</div>
+            <div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px">Pushes all approved ads via FTP and updates the playlist on the TB10 Plus.</div>
+            <div id="publish-status-bar" style="display:none;margin-bottom:10px">
+              <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:6px">
+                <div id="publish-progress-fill" style="height:100%;background:var(--blue);border-radius:3px;transition:width .3s;width:0%"></div>
+              </div>
+              <div id="publish-status-text" style="font-size:12px;color:var(--text-muted)"></div>
+            </div>
+            <button class="btn btn-primary" id="publish-btn" onclick="publishToScreen()" style="width:100%;justify-content:center">🚀 Publish to Screen</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- CONFIG PANEL -->
+      <div id="screen-panel-config" style="display:none">
+        <div class="alert alert-info" style="font-size:13px;margin-bottom:16px">
+          These settings are specific to this location's TB10 Plus controller. Set the Tailscale IP after installing Tailscale on the device.
+        </div>
+        <!-- Required fields -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+          <div class="form-group">
+            <label class="form-label">Tailscale IP *</label>
+            <input type="text" class="form-input" id="cfg-ip" placeholder="100.x.x.x">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Serial Number *</label>
+            <input type="text" class="form-input" id="cfg-serial" placeholder="TB10 serial number">
+          </div>
+          <div class="form-group" style="grid-column:1/-1">
+            <label class="form-label">Password *</label>
+            <input type="password" class="form-input" id="cfg-password" placeholder="TB10 admin password">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Screen Width (px) *</label>
+            <input type="number" class="form-input" id="cfg-width" placeholder="e.g. 344">
+            <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Check ViPlex Express → Screen Configuration</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Screen Height (px) *</label>
+            <input type="number" class="form-input" id="cfg-height" placeholder="e.g. 1032">
+            <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Check ViPlex Express → Screen Configuration</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Slide Duration (seconds)</label>
+            <input type="number" class="form-input" id="cfg-duration" value="12">
+          </div>
+        </div>
+
+        <!-- Advanced — collapsed by default -->
+        <details style="margin-bottom:16px">
+          <summary style="font-size:13px;color:var(--text-muted);cursor:pointer;user-select:none;margin-bottom:10px">⚙️ Advanced Settings <span style="font-size:12px">(pre-filled, only change if needed)</span></summary>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px;padding:14px;background:var(--bg-surface);border-radius:8px;border:1px solid var(--border)">
+            <div class="form-group">
+              <label class="form-label">Username</label>
+              <input type="text" class="form-input" id="cfg-username" value="admin">
+            </div>
+            <div class="form-group">
+              <label class="form-label">API Port</label>
+              <input type="number" class="form-input" id="cfg-port" value="16674">
+            </div>
+            <div class="form-group">
+              <label class="form-label">FTP Port</label>
+              <input type="number" class="form-input" id="cfg-ftp-port" value="21">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Media Path</label>
+              <input type="text" class="form-input" id="cfg-media-path" value="/var/novasoft/media">
+            </div>
+          </div>
+        </details>
+        <div style="display:flex;gap:10px;margin-top:16px">
+          <button class="btn btn-primary" style="flex:1;justify-content:center" onclick="saveScreenConfig()">Save Configuration</button>
+          <button class="btn btn-ghost" onclick="closeScreenModal()">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let _screenLocId = null;
+    let _publishPoll = null;
+
+    function screenTab(tab) {
+      document.getElementById('screen-panel-control').style.display = tab === 'control' ? 'block' : 'none';
+      document.getElementById('screen-panel-config').style.display  = tab === 'config'  ? 'block' : 'none';
+      document.getElementById('screen-tab-control').className = 'btn btn-sm ' + (tab === 'control' ? 'btn-primary' : 'btn-ghost') + ' flex:1;justify-content:center';
+      document.getElementById('screen-tab-config').className  = 'btn btn-sm ' + (tab === 'config'  ? 'btn-primary' : 'btn-ghost') + ' flex:1;justify-content:center';
+      document.getElementById('screen-tab-control').style.flex = '1';
+      document.getElementById('screen-tab-config').style.flex  = '1';
+    }
+
+    async function openScreenControl(locId, locName) {
+      _screenLocId = locId;
+      document.getElementById('screen-modal-title').textContent = '📺 ' + locName;
+      document.getElementById('screen-modal').classList.add('open');
+      document.getElementById('ftp-test-result').style.display = 'none';
+      document.getElementById('publish-status-bar').style.display = 'none';
+
+      // Load existing config
+      try {
+        const res = await api('/api/screens/' + locId + '/config');
+        if (res.config) {
+          fillConfig(res.config);
+          document.getElementById('screen-not-configured').style.display = 'none';
+          document.getElementById('screen-control-ui').style.display = 'block';
+          screenTab('control');
+        } else {
+          document.getElementById('screen-not-configured').style.display = 'block';
+          document.getElementById('screen-control-ui').style.display = 'none';
+          screenTab('config');
+        }
+      } catch(e) {
+        screenTab('config');
+      }
+    }
+
+    function fillConfig(cfg) {
+      document.getElementById('cfg-ip').value         = cfg.tailscale_ip || '';
+      document.getElementById('cfg-serial').value     = cfg.serial       || '';
+      document.getElementById('cfg-password').value   = cfg.password     || '';
+      document.getElementById('cfg-username').value   = cfg.username     || 'admin';
+      document.getElementById('cfg-width').value      = cfg.width        || '';
+      document.getElementById('cfg-height').value     = cfg.height       || '';
+
+      document.getElementById('cfg-duration').value   = cfg.slide_duration || 12;
+      document.getElementById('cfg-port').value       = cfg.port         || 16674;
+      document.getElementById('cfg-ftp-port').value   = cfg.ftp_port     || 21;
+      document.getElementById('cfg-media-path').value = cfg.media_path   || '/var/novasoft/media';
+    }
+
+    function closeScreenModal() {
+      document.getElementById('screen-modal').classList.remove('open');
+      if (_publishPoll) { clearInterval(_publishPoll); _publishPoll = null; }
+      _screenLocId = null;
+    }
+
+    async function saveScreenConfig() {
+      const body = {
+        tailscale_ip:   document.getElementById('cfg-ip').value.trim(),
+        serial:         document.getElementById('cfg-serial').value.trim(),
+        password:       document.getElementById('cfg-password').value.trim(),
+        username:       document.getElementById('cfg-username').value.trim() || 'admin',
+        width:          parseInt(document.getElementById('cfg-width').value)  || 0,
+        height:         parseInt(document.getElementById('cfg-height').value) || 0,
+        slide_duration: parseInt(document.getElementById('cfg-duration').value) || 12,
+        port:           parseInt(document.getElementById('cfg-port').value)    || 16674,
+        ftp_port:       parseInt(document.getElementById('cfg-ftp-port').value) || 21,
+        media_path:     document.getElementById('cfg-media-path').value.trim() || '/var/novasoft/media',
+      };
+      if (!body.tailscale_ip || !body.serial || !body.password || !body.width || !body.height)
+        return toast('Tailscale IP, Serial, Password, Width and Height are required', 'error');
+
+      const r = await api('/api/screens/' + _screenLocId + '/config', { method: 'POST', body: JSON.stringify(body) });
+      if (r.success) {
+        toast('Screen configured ✅', 'success');
+        document.getElementById('screen-not-configured').style.display = 'none';
+        document.getElementById('screen-control-ui').style.display = 'block';
+        screenTab('control');
+        await loadLocations();
+      } else {
+        toast(r.error || 'Failed to save', 'error');
+      }
+    }
+
+    async function refreshScreenStatus() {
+      const el = document.getElementById('screen-status-display');
+      el.innerHTML = '<span style="color:var(--text-muted)">Checking...</span>';
+      try {
+        const r = await api('/api/screens/' + _screenLocId + '/status', { method: 'POST' });
+        if (r.ok && r.data) {
+          const d = r.data.data || r.data;
+          const power = d.power === 'on' || d.screenStatus === 1;
+          const powerLabel = d.power || (d.screenStatus === 1 ? 'On' : 'Off');
+          const brightness = d.brightness ?? d.brightnessValue ?? '—';
+          const temp = d.temperature ?? '—';
+          el.innerHTML =
+            '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">' +
+              '<div style="background:var(--bg-card);border-radius:8px;padding:10px;text-align:center">' +
+                '<div style="font-size:18px;margin-bottom:4px">' + (power ? '🟢' : '🔴') + '</div>' +
+                '<div style="font-size:11px;color:var(--text-muted)">Power</div>' +
+                '<div style="font-weight:700;color:var(--text-primary);font-size:13px">' + powerLabel + '</div>' +
+              '</div>' +
+              '<div style="background:var(--bg-card);border-radius:8px;padding:10px;text-align:center">' +
+                '<div style="font-size:18px;margin-bottom:4px">☀️</div>' +
+                '<div style="font-size:11px;color:var(--text-muted)">Brightness</div>' +
+                '<div style="font-weight:700;color:var(--accent);font-size:13px">' + brightness + '%</div>' +
+              '</div>' +
+              '<div style="background:var(--bg-card);border-radius:8px;padding:10px;text-align:center">' +
+                '<div style="font-size:18px;margin-bottom:4px">🌡️</div>' +
+                '<div style="font-size:11px;color:var(--text-muted)">Temp</div>' +
+                '<div style="font-weight:700;color:var(--text-primary);font-size:13px">' + temp + '°C</div>' +
+              '</div>' +
+            '</div>';
+        } else {
+          el.innerHTML = '<div style="color:var(--danger)">Error: ' + (r.error || 'Could not reach screen') + '</div>';
+        }
+      } catch(e) {
+        el.innerHTML = '<div style="color:var(--danger)">Could not reach screen — check Tailscale connection</div>';
+      }
+    }
+
+    async function screenCmd(cmd) {
+      try {
+        const r = await api('/api/screens/' + _screenLocId + '/' + cmd, { method: 'POST' });
+        toast(r.ok ? cmd + ' command sent ✅' : (r.error || 'Failed'), r.ok ? 'success' : 'error');
+        if (r.ok) setTimeout(refreshScreenStatus, 3000);
+      } catch(e) { toast('Command failed — check connection', 'error'); }
+    }
+
+    async function setBrightness() {
+      const value = parseInt(document.getElementById('brightness-slider').value);
+      try {
+        const r = await api('/api/screens/' + _screenLocId + '/brightness', { method: 'POST', body: JSON.stringify({ value }) });
+        toast(r.ok ? 'Brightness set to ' + value + '% ✅' : (r.error || 'Failed'), r.ok ? 'success' : 'error');
+      } catch(e) { toast('Failed to set brightness', 'error'); }
+    }
+
+    async function ftpTest() {
+      const el = document.getElementById('ftp-test-result');
+      el.style.display = 'block';
+      el.innerHTML = '<span style="color:var(--text-muted)">Testing FTP connection...</span>';
+      try {
+        const r = await api('/api/screens/' + _screenLocId + '/ftp-test', { method: 'POST' });
+        if (r.ok) {
+          el.innerHTML = '<div style="color:var(--success)">✅ FTP OK — media path: ' + (r.mediaPath || r.message) + '</div>';
+        } else {
+          el.innerHTML = '<div style="color:var(--danger)">❌ ' + (r.error || 'FTP connection failed') + '</div>';
+        }
+      } catch(e) { el.innerHTML = '<div style="color:var(--danger)">❌ Connection failed — is Tailscale running?</div>'; }
+    }
+
+    async function publishToScreen() {
+      const btn = document.getElementById('publish-btn');
+      const bar = document.getElementById('publish-status-bar');
+      const fill = document.getElementById('publish-progress-fill');
+      const txt  = document.getElementById('publish-status-text');
+      btn.disabled = true;
+      btn.textContent = '⏳ Publishing...';
+      bar.style.display = 'block';
+      fill.style.width = '5%';
+      txt.textContent = 'Starting...';
+      try {
+        const r = await api('/api/screens/' + _screenLocId + '/publish', { method: 'POST' });
+        if (!r.ok) {
+          toast(r.error || 'Publish failed', 'error');
+          btn.disabled = false;
+          btn.textContent = '🚀 Publish to Screen';
+          return;
+        }
+        // Poll for progress
+        _publishPoll = setInterval(async () => {
+          try {
+            const s = await api('/api/screens/' + _screenLocId + '/publish-status');
+            if (s.progress) {
+              const pct = s.progress.total > 0 ? Math.round((s.progress.current / s.progress.total) * 100) : 10;
+              fill.style.width = pct + '%';
+              txt.textContent = s.progress.step + ' (' + s.progress.current + '/' + s.progress.total + ')';
+            }
+            if (s.status === 'done') {
+              fill.style.width = '100%';
+              txt.textContent = '✅ Published successfully!';
+              clearInterval(_publishPoll); _publishPoll = null;
+              btn.disabled = false;
+              btn.textContent = '🚀 Publish to Screen';
+              toast('Ads published to screen ✅', 'success');
+            } else if (s.status === 'error') {
+              txt.textContent = '❌ ' + (s.error || 'Publish failed');
+              clearInterval(_publishPoll); _publishPoll = null;
+              btn.disabled = false;
+              btn.textContent = '🚀 Publish to Screen';
+              toast('Publish failed: ' + s.error, 'error');
+            }
+          } catch(e) { /* keep polling */ }
+        }, 2000);
+      } catch(e) {
+        toast('Publish failed', 'error');
+        btn.disabled = false;
+        btn.textContent = '🚀 Publish to Screen';
+      }
+    }
+  </script>
+
+
+  <script>
+    function toggleAdminSidebar() {
+      const sidebar = document.getElementById('adminSidebar');
+      const overlay = document.getElementById('sidebarOverlay');
+      const isOpen  = sidebar.classList.contains('open');
+      sidebar.classList.toggle('open', !isOpen);
+      overlay.style.display = !isOpen ? 'block' : 'none';
+    }
+
+    // Auto-close sidebar after selecting a tab on mobile
+    document.querySelectorAll('.sidebar-item').forEach(item => {
+      item.addEventListener('click', () => {
+        if (window.innerWidth <= 768) {
+          document.getElementById('adminSidebar').classList.remove('open');
+          document.getElementById('sidebarOverlay').style.display = 'none';
+        }
+      });
+    });
+  </script>
+
+</body>
+</html>

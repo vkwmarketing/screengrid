@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Sign Up — ScreenGrid</title>
+  <link rel="icon" type="image/png" href="/logo.png">
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+  @media (max-width: 480px) { .card { margin: 16px; padding: 24px; } .grid-2 { grid-template-columns: 1fr !important; } }
+    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 40px 20px; }
+    .auth-wrap { width: 100%; max-width: 520px; }
+    .auth-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      padding: 48px 44px;
+      box-shadow: var(--shadow-card);
+    }
+    .form { display: flex; flex-direction: column; gap: 20px; }
+    .presale-banner {
+      background: linear-gradient(135deg, rgba(45,107,228,0.15), rgba(79,158,255,0.08));
+      border: 1px solid rgba(45,107,228,0.3);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      margin-bottom: 28px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .bg-art {
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 70% 50% at 70% 30%, rgba(45,107,228,0.08) 0%, transparent 60%),
+        var(--bg-base);
+      z-index: -1;
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-art"></div>
+  <div class="auth-wrap">
+    <div style="text-align:center;margin-bottom:24px">
+      <a href="/" style="font-family:var(--font-display);font-size:22px;font-weight:800;text-transform:uppercase;letter-spacing:2px;color:var(--text-primary)">
+        <span style="white-space:nowrap"><span style="color:var(--text-primary)">Screen</span><span style="color:var(--blue)">Grid</span></span>
+      </a>
+    </div>
+    <div class="auth-card">
+      <h3 style="margin-bottom:8px">Create Your <span style="color:var(--blue)">Account</span></h3>
+      <p style="font-size:14px;color:var(--text-muted);margin-bottom:28px">Join the ScreenGrid advertising network and start reaching more customers.</p>
+
+      <div class="presale-banner">
+        <span style="font-size:24px">🚀</span>
+        <div>
+          <div style="font-weight:700;color:var(--text-primary);font-size:14px">Pre-Sale is Live!</div>
+          <div style="font-size:13px;color:var(--text-secondary)">Reserve your spot for just $50. Full price applies at launch.</div>
+        </div>
+      </div>
+
+      <div id="error-msg" class="alert alert-danger" style="display:none;margin-bottom:16px"></div>
+      <form class="form" onsubmit="signup(event)">
+        <div class="grid-2">
+          <div class="form-group">
+            <label class="form-label">Business Name *</label>
+            <input type="text" class="form-input" id="business_name" placeholder="Your Business" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Contact Name</label>
+            <input type="text" class="form-input" id="contact_name" placeholder="Your Name">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email Address *</label>
+          <input type="email" class="form-input" id="email" placeholder="you@business.com" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Phone Number</label>
+          <input type="tel" class="form-input" id="phone" placeholder="+1 (519) 000-0000">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password *</label>
+          <input type="password" class="form-input" id="password" placeholder="Min. 8 characters" required minlength="8">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Confirm Password *</label>
+          <input type="password" class="form-input" id="confirm" placeholder="Repeat password" required>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:10px">
+          <input type="checkbox" id="terms" required style="margin-top:3px;accent-color:var(--blue)">
+          <label for="terms" style="font-size:13px;color:var(--text-muted);cursor:pointer">
+            I agree to ScreenGrid' Terms of Service and understand the pre-sale deposit policy.
+          </label>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center" id="signup-btn">
+          Create Account & Explore Spots
+        </button>
+      </form>
+      <div class="divider"></div>
+      <p style="text-align:center;font-size:14px;color:var(--text-muted)">
+        Already have an account? <a href="/login.html" style="color:var(--accent)">Sign in →</a>
+      </p>
+    </div>
+  </div>
+  <script>
+    async function signup(e) {
+      e.preventDefault();
+      const pass = document.getElementById('password').value;
+      const conf = document.getElementById('confirm').value;
+      const errEl = document.getElementById('error-msg');
+      errEl.style.display = 'none';
+      if (pass !== conf) {
+        errEl.textContent = 'Passwords do not match';
+        errEl.style.display = 'flex';
+        return;
+      }
+      const btn = document.getElementById('signup-btn');
+      btn.disabled = true; btn.textContent = 'Creating account...';
+      try {
+        const r = await fetch('/api/auth/signup', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            email: document.getElementById('email').value,
+            password: pass,
+            business_name: document.getElementById('business_name').value,
+            contact_name: document.getElementById('contact_name').value,
+            phone: document.getElementById('phone').value
+          })
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || 'Signup failed');
+        localStorage.setItem('vkw_token', data.token);
+        localStorage.setItem('vkw_user', JSON.stringify(data.user));
+        window.location.href = '/dashboard.html';
+      } catch(err) {
+        errEl.textContent = err.message;
+        errEl.style.display = 'flex';
+        btn.disabled = false;
+        btn.textContent = 'Create Account & Explore Spots';
+      }
+    }
+  </script>
+<script src="/js/db-status.js"></script>
+</body>
+</html>
