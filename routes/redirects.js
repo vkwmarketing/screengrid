@@ -157,7 +157,7 @@ router.get('/notifications', authenticate, async (req, res) => {
   const { data } = await supabase
     .from('notifications')
     .select('*')
-    .or(`user_id.eq.${req.user.id},user_id.is.null`)
+    .eq('user_id', req.user.id)
     .order('created_at', { ascending: false })
     .limit(20);
   res.json(data || []);
@@ -165,7 +165,11 @@ router.get('/notifications', authenticate, async (req, res) => {
 
 // POST /api/redirects/notifications/:id/read
 router.post('/notifications/:id/read', authenticate, async (req, res) => {
-  await supabase.from('notifications').update({ is_read: true }).eq('id', req.params.id);
+  await supabase
+    .from('notifications')
+    .update({ is_read: true })
+    .eq('id', req.params.id)
+    .eq('user_id', req.user.id);
   res.json({ success: true });
 });
 
